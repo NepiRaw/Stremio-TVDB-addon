@@ -155,11 +155,11 @@ class TVDBService {
 
     /**
      * Get artwork for a series/movie using TVDB v4 artwork endpoints
+     * Enhanced to prioritize high-resolution images
      */
     async getArtwork(entityType, entityId, language = 'eng') {
         try {
             const endpoint = `/${entityType}/${entityId}/artworks`;
-            // Remove invalid type parameter - let API return all artwork types
             const params = {
                 lang: language
             };
@@ -172,23 +172,62 @@ class TVDBService {
                 background: null
             };
             
-            // Extract poster and background/fanart based on type IDs
+            // Separate artworks by type for better selection
+            const posters = [];
+            const backgrounds = [];
+            
             for (const art of artworks) {
+                if (!art.image) continue;
+                
                 // Type 2 = Poster, Type 3 = Fanart/Background
-                if ((art.type === 2 || art.type === '2') && !artwork.poster && art.image) {
-                    artwork.poster = art.image;
+                if (art.type === 2 || art.type === '2' || art.typeName?.toLowerCase().includes('poster')) {
+                    posters.push(art);
                 }
-                if ((art.type === 3 || art.type === '3') && !artwork.background && art.image) {
-                    artwork.background = art.image;
+                if (art.type === 3 || art.type === '3' || 
+                    art.typeName?.toLowerCase().includes('fanart') || 
+                    art.typeName?.toLowerCase().includes('background')) {
+                    backgrounds.push(art);
                 }
-                // Also check for type names if available
-                if (art.typeName?.toLowerCase().includes('poster') && !artwork.poster && art.image) {
-                    artwork.poster = art.image;
-                }
-                if ((art.typeName?.toLowerCase().includes('fanart') || art.typeName?.toLowerCase().includes('background')) 
-                    && !artwork.background && art.image) {
-                    artwork.background = art.image;
-                }
+            }
+            
+            // Select best poster (prioritize by resolution, then score)
+            if (posters.length > 0) {
+                const bestPoster = posters.sort((a, b) => {
+                    // First priority: resolution (width * height)
+                    const aResolution = (a.width || 0) * (a.height || 0);
+                    const bResolution = (b.width || 0) * (b.height || 0);
+                    if (aResolution !== bResolution) return bResolution - aResolution;
+                    
+                    // Second priority: score
+                    return (b.score || 0) - (a.score || 0);
+                })[0];
+                artwork.poster = bestPoster.image;
+                console.log(`🎨 Selected poster: ${bestPoster.width}x${bestPoster.height} (score: ${bestPoster.score})`);
+            }
+            
+            // Select best background (prioritize high resolution for better visual impact)
+            if (backgrounds.length > 0) {
+                const bestBackground = backgrounds.sort((a, b) => {
+                    // First priority: resolution (width * height) - crucial for backgrounds
+                    const aResolution = (a.width || 0) * (a.height || 0);
+                    const bResolution = (b.width || 0) * (b.height || 0);
+                    if (aResolution !== bResolution) return bResolution - aResolution;
+                    
+                    // Second priority: prefer wider aspect ratios for backgrounds (16:9, 21:9, etc.)
+                    const aAspectRatio = a.width && a.height ? a.width / a.height : 0;
+                    const bAspectRatio = b.width && b.height ? b.width / b.height : 0;
+                    if (Math.abs(aAspectRatio - bAspectRatio) > 0.1) {
+                        // Prefer aspect ratios between 1.5 and 2.5 (typical for backgrounds)
+                        const aIsGoodRatio = aAspectRatio >= 1.5 && aAspectRatio <= 2.5;
+                        const bIsGoodRatio = bAspectRatio >= 1.5 && bAspectRatio <= 2.5;
+                        if (aIsGoodRatio !== bIsGoodRatio) return bIsGoodRatio ? 1 : -1;
+                    }
+                    
+                    // Third priority: score
+                    return (b.score || 0) - (a.score || 0);
+                })[0];
+                artwork.background = bestBackground.image;
+                console.log(`🎨 Selected background: ${bestBackground.width}x${bestBackground.height} (ratio: ${bestBackground.width && bestBackground.height ? (bestBackground.width/bestBackground.height).toFixed(2) : 'unknown'}, score: ${bestBackground.score})`);
             }
             
             return artwork;
@@ -587,20 +626,47 @@ class TVDBService {
             console.log(`🎨 Fetching artwork for ${stremioType} ${numericId}`);
             const artwork = await this.getArtwork(stremioType === 'movie' ? 'movies' : 'series', numericId, tvdbLang);
             
+            // Enhanced poster selection with fallbacks
             if (artwork.poster) {
                 meta.poster = artwork.poster;
-                console.log(`✅ Got poster from artwork API`);
-            } else if (item.image) {
-                meta.poster = item.image;
-                console.log(`🔄 Using fallback poster`);
+                console.log(`✅ Got high-res poster from artwork API`);
+            } else {
+                // Check for high-resolution images in the series data itself
+                const imageSources = [
+                    item.image,           // Primary image
+                    item.poster,          // Direct poster field
+                    item.fanart,          // Fanart field
+                    ...(item.artworks || []).filter(art => art.type === 2 || art.typeName?.includes('poster')).map(art => art.image)
+                ].filter(Boolean);
+                
+                if (imageSources.length > 0) {
+                    meta.poster = imageSources[0];
+                    console.log(`🔄 Using fallback poster from series data`);
+                }
             }
             
+            // Enhanced background selection with multiple fallbacks
             if (artwork.background) {
                 meta.background = artwork.background;
-                console.log(`✅ Got background from artwork API`);
-            } else if (item.image) {
-                meta.background = item.image; // Fallback to poster as background
-                console.log(`🔄 Using poster as background fallback`);
+                console.log(`✅ Got high-res background from artwork API`);
+            } else {
+                // Look for high-resolution background images in series data
+                const backgroundSources = [
+                    item.fanart,          // Fanart is typically good for backgrounds
+                    item.backdrop,        // Backdrop field
+                    item.background,      // Direct background field
+                    ...(item.artworks || []).filter(art => 
+                        art.type === 3 || 
+                        art.typeName?.toLowerCase().includes('fanart') || 
+                        art.typeName?.toLowerCase().includes('background')
+                    ).map(art => art.image),
+                    item.image           // Final fallback to poster
+                ].filter(Boolean);
+                
+                if (backgroundSources.length > 0) {
+                    meta.background = backgroundSources[0];
+                    console.log(`🔄 Using fallback background from series data`);
+                }
             }
 
             // Extract proper IMDB ID from remoteIds
@@ -738,6 +804,8 @@ class TVDBService {
                                 
                                 // PERFORMANCE OPTIMIZATION: Get all episode translations in bulk using TVDB v4 bulk translation endpoint
                                 let translatedEpisodes = null;
+                                let englishFallbackEpisodes = null;
+                                
                                 try {
                                     console.log(`🌐 Fetching bulk episode translations for language: ${tvdbLang}`);
                                     const bulkResponse = await this.makeRequest(`/series/${numericId}/episodes/default/${tvdbLang}`);
@@ -745,6 +813,21 @@ class TVDBService {
                                     
                                     if (translatedEpisodes && translatedEpisodes.length > 0) {
                                         console.log(`✅ Got ${translatedEpisodes.length} translated episodes in bulk`);
+                                        
+                                        // Always get English fallback if we're not requesting English
+                                        if (tvdbLang !== 'eng') {
+                                            console.log(`🇬🇧 Fetching English episodes for fallback...`);
+                                            try {
+                                                const engResponse = await this.makeRequest(`/series/${numericId}/episodes/default/eng`);
+                                                englishFallbackEpisodes = engResponse?.data?.episodes || null;
+                                                
+                                                if (englishFallbackEpisodes && englishFallbackEpisodes.length > 0) {
+                                                    console.log(`✅ Got ${englishFallbackEpisodes.length} English episodes for fallback`);
+                                                }
+                                            } catch (engError) {
+                                                console.log(`⚠️ English fallback failed: ${engError.message}`);
+                                            }
+                                        }
                                     } else if (tvdbLang !== 'eng') {
                                         // Fallback to English if requested language not available
                                         console.log(`⚠️ No ${tvdbLang} bulk translations, trying English fallback`);
@@ -760,12 +843,22 @@ class TVDBService {
                                     translatedEpisodes = null;
                                 }
                                 
-                                // Create a lookup map for translated episodes by episode ID
+                                // Create lookup maps for translated episodes by episode ID
                                 const translationLookup = new Map();
+                                const englishLookup = new Map();
+                                
                                 if (translatedEpisodes) {
                                     translatedEpisodes.forEach(translatedEp => {
                                         if (translatedEp.id) {
                                             translationLookup.set(translatedEp.id, translatedEp);
+                                        }
+                                    });
+                                }
+                                
+                                if (englishFallbackEpisodes) {
+                                    englishFallbackEpisodes.forEach(engEp => {
+                                        if (engEp.id) {
+                                            englishLookup.set(engEp.id, engEp);
                                         }
                                     });
                                 }
@@ -810,8 +903,17 @@ class TVDBService {
                                 const videoMap = new Map();
                                 
                                 for (const episode of airedEpisodes) {
-                                    // Proper Stremio video ID format: "seriesId:season:episode"
-                                    const videoId = `${numericId}:${episode.seasonNumber}:${episode.number}`;
+                                    // ENHANCED: Use IMDB ID format for better stream addon compatibility
+                                    // Stream addons prefer IMDB IDs over TVDB IDs for content recognition
+                                    let videoId;
+                                    if (imdbId) {
+                                        // Use IMDB format: "tt26743760:1:1" (preferred by most stream addons)
+                                        videoId = `${imdbId}:${episode.seasonNumber}:${episode.number}`;
+                                    } else {
+                                        // Fallback to TVDB format: "431162:1:1" 
+                                        videoId = `${numericId}:${episode.seasonNumber}:${episode.number}`;
+                                    }
+                                    
                                     if (!videoMap.has(videoId)) {
                                         // Start with original episode data
                                         let episodeName = episode.name || `Episode ${episode.number}`;
@@ -823,15 +925,40 @@ class TVDBService {
                                             episodeOverview = episode.overview || `Special Episode ${episode.number}`;
                                         }
                                         
-                                        // Use bulk translation data if available
+                                        // Use bulk translation data with smart fallback logic
                                         if (translationLookup.has(episode.id)) {
                                             const translatedEp = translationLookup.get(episode.id);
-                                            if (translatedEp.name && translatedEp.name.trim()) {
+                                            
+                                            // Use requested language if available and not null/empty
+                                            if (translatedEp.name && translatedEp.name.trim() && translatedEp.name.toLowerCase() !== 'null') {
                                                 episodeName = translatedEp.name;
                                                 console.log(`🎭 Bulk translated S${episode.seasonNumber}E${episode.number}: ${episodeName}`);
+                                                
+                                                if (translatedEp.overview && translatedEp.overview.trim()) {
+                                                    episodeOverview = translatedEp.overview;
+                                                }
+                                            } else if (englishLookup.has(episode.id)) {
+                                                // Fallback to English if requested language has null/empty name
+                                                const englishEp = englishLookup.get(episode.id);
+                                                if (englishEp.name && englishEp.name.trim()) {
+                                                    episodeName = englishEp.name;
+                                                    console.log(`🇬🇧 English fallback S${episode.seasonNumber}E${episode.number}: ${episodeName}`);
+                                                    
+                                                    if (englishEp.overview && englishEp.overview.trim()) {
+                                                        episodeOverview = englishEp.overview;
+                                                    }
+                                                }
                                             }
-                                            if (translatedEp.overview && translatedEp.overview.trim()) {
-                                                episodeOverview = translatedEp.overview;
+                                        } else if (englishLookup.has(episode.id)) {
+                                            // Use English if requested language episode not found
+                                            const englishEp = englishLookup.get(episode.id);
+                                            if (englishEp.name && englishEp.name.trim()) {
+                                                episodeName = englishEp.name;
+                                                console.log(`🇬🇧 English only S${episode.seasonNumber}E${episode.number}: ${episodeName}`);
+                                                
+                                                if (englishEp.overview && englishEp.overview.trim()) {
+                                                    episodeOverview = englishEp.overview;
+                                                }
                                             }
                                         }
                                         
@@ -867,18 +994,27 @@ class TVDBService {
                             console.error('Error fetching episodes:', episodeError.message);
                         }
 
-                        // Add behavior hints for series
+                        // Add behavior hints for series with IMDB ID support
+                        // Set default to first available episode (usually S1E1)
+                        let defaultVideoId = null;
+                        if (meta.videos && meta.videos.length > 0) {
+                            // Find the first episode of the first season (excluding specials if possible)
+                            const regularEpisodes = meta.videos.filter(v => v.season > 0);
+                            const firstEpisode = regularEpisodes.length > 0 ? regularEpisodes[0] : meta.videos[0];
+                            defaultVideoId = firstEpisode.id;
+                        }
+                        
                         meta.behaviorHints = {
-                            defaultVideoId: null,
+                            defaultVideoId: defaultVideoId,
                             hasScheduledVideos: true
                         };
                     }
                 }
 
-                // If no seasons data, still set proper defaults
+                // If no seasons data, still set proper defaults with IMDB ID support
                 if (meta.seasons === 0) {
                     meta.behaviorHints = {
-                        defaultVideoId: null,
+                        defaultVideoId: imdbId || null,
                         hasScheduledVideos: false
                     };
                 }
