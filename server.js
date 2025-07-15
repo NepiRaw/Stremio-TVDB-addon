@@ -23,6 +23,13 @@ app.use('/static', express.static(path.join(__dirname, 'src', 'static')));
 
 // Routes
 app.get('/', installationPageHandler);
+
+// Language-specific routes
+app.get('/:language/manifest.json', manifestHandler);
+app.get('/:language/catalog/:type/:id/:extra?.json', catalogHandler);
+app.get('/:language/meta/:type/:id.json', metaHandler);
+
+// Default routes (English)
 app.get('/manifest.json', manifestHandler);
 app.get('/catalog/:type/:id/:extra?.json', catalogHandler);
 app.get('/meta/:type/:id.json', metaHandler);

@@ -1,36 +1,62 @@
 const tvdbService = require('../services/tvdbService');
 
 /**
- * Extract preferred language from Accept-Language header
- * @param {string} acceptLanguage - Accept-Language header value
- * @returns {string|null} - Preferred language code (e.g., 'fr', 'es', 'de') or null
+ * Extract language preference from URL parameter or Accept-Language header
+ * @param {object} req - Express request object
+ * @returns {string} - Language code (e.g., 'fr-FR', 'es-ES')
  */
-function extractPreferredLanguage(acceptLanguage) {
-    if (!acceptLanguage) return null;
-    
-    // Parse Accept-Language header (e.g., "fr-FR,fr;q=0.9,en;q=0.8")
-    const languages = acceptLanguage
-        .split(',')
-        .map(lang => {
-            const parts = lang.trim().split(';');
-            const code = parts[0].trim();
-            const quality = parts[1] ? parseFloat(parts[1].split('=')[1]) : 1.0;
-            return { code, quality };
-        })
-        .sort((a, b) => b.quality - a.quality);
-    
-    // Get the highest priority language that's not English (since English is our fallback)
-    const preferredLang = languages.find(lang => {
-        const langCode = lang.code.toLowerCase();
-        return !langCode.startsWith('en') && langCode !== 'en-us' && langCode !== 'en-gb';
-    });
-    
-    if (preferredLang) {
-        // Convert to 2-letter language code if needed (e.g., 'fr-FR' -> 'fr')
-        return preferredLang.code.split('-')[0].toLowerCase();
+function getLanguagePreference(req) {
+    // First priority: URL parameter (e.g., /es-ES/meta/...)
+    if (req.params.language) {
+        const urlLang = req.params.language;
+        if (/^[a-z]{2}-[A-Z]{2}$/.test(urlLang)) {
+            return urlLang;
+        }
     }
     
-    return null;
+    // Second priority: Accept-Language header
+    const acceptLanguage = req.headers['accept-language'];
+    if (acceptLanguage) {
+        // Parse Accept-Language header (e.g., "fr-FR,fr;q=0.9,en;q=0.8")
+        const languages = acceptLanguage
+            .split(',')
+            .map(lang => {
+                const parts = lang.trim().split(';');
+                const code = parts[0].trim();
+                const quality = parts[1] ? parseFloat(parts[1].split('=')[1]) : 1.0;
+                return { code, quality };
+            })
+            .sort((a, b) => b.quality - a.quality);
+        
+        // Get the highest priority language
+        const preferredLang = languages[0];
+        if (preferredLang) {
+            // Normalize to full language code
+            const langCode = preferredLang.code.toLowerCase();
+            if (langCode.includes('-')) {
+                const [lang, country] = langCode.split('-');
+                return `${lang}-${country.toUpperCase()}`;
+            } else {
+                // Map common 2-letter codes to full codes
+                const langMap = {
+                    'en': 'en-US',
+                    'es': 'es-ES',
+                    'fr': 'fr-FR',
+                    'de': 'de-DE',
+                    'it': 'it-IT',
+                    'pt': 'pt-BR',
+                    'ja': 'ja-JP',
+                    'ko': 'ko-KR',
+                    'zh': 'zh-CN',
+                    'ru': 'ru-RU'
+                };
+                return langMap[langCode] || 'en-US';
+            }
+        }
+    }
+    
+    // Default: English
+    return 'en-US';
 }
 
 /**
@@ -56,11 +82,10 @@ async function metaHandler(req, res) {
             return res.status(400).json({ error: 'Invalid TVDB ID' });
         }
 
-        // Extract user's preferred language from Accept-Language header
-        const acceptLanguage = req.headers['accept-language'];
-        const userLanguage = extractPreferredLanguage(acceptLanguage);
+        // Extract user's preferred language
+        const userLanguage = getLanguagePreference(req);
         
-        console.log(`📋 Getting metadata for ${type} ID: ${tvdbId}${userLanguage ? ` (user language: ${userLanguage})` : ''}`);
+        console.log(`📋 Getting metadata for ${type} ID: ${tvdbId} (language: ${userLanguage})`);
 
         let detailedData = null;
         let seasonsData = null;
@@ -69,14 +94,28 @@ async function metaHandler(req, res) {
         if (type === 'movie') {
             detailedData = await tvdbService.getMovieDetails(tvdbId);
         } else if (type === 'series') {
-            // For series, get both series details and seasons
-            const [seriesDetails, seasons] = await Promise.all([
+            // For series, get both series details and seasons with extended data
+            const [seriesDetails, seasons, extendedData] = await Promise.all([
                 tvdbService.getSeriesDetails(tvdbId),
-                tvdbService.getSeriesSeasons(tvdbId)
+                tvdbService.getSeriesSeasons(tvdbId),
+                tvdbService.getSeriesExtended(tvdbId).catch(() => null)
             ]);
             
-            detailedData = seriesDetails;
+            // Merge extended data if available
+            if (extendedData && seriesDetails) {
+                detailedData = { ...seriesDetails, ...extendedData };
+            } else {
+                detailedData = seriesDetails;
+            }
+            
             seasonsData = seasons;
+            
+            // Log season data for debugging
+            if (seasons && seasons.length > 0) {
+                console.log(`📺 Found ${seasons.length} seasons for series ${tvdbId}`);
+            } else {
+                console.log(`⚠️ No seasons found for series ${tvdbId}`);
+            }
         }
 
         if (!detailedData) {

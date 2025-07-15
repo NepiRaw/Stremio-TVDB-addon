@@ -147,8 +147,22 @@ class TVDBService {
      */
     async getSeriesSeasons(seriesId) {
         try {
-            const response = await this.makeRequest(`/series/${seriesId}/seasons`);
-            return response.data || [];
+            // Try the extended endpoint first, which often includes seasons
+            const extendedResponse = await this.makeRequest(`/series/${seriesId}/extended`);
+            if (extendedResponse?.data?.seasons) {
+                console.log(`📺 Got ${extendedResponse.data.seasons.length} seasons from extended endpoint`);
+                return extendedResponse.data.seasons;
+            }
+            
+            // Fallback to basic series info that might include seasons
+            const basicResponse = await this.makeRequest(`/series/${seriesId}`);
+            if (basicResponse?.data?.seasons) {
+                console.log(`📺 Got ${basicResponse.data.seasons.length} seasons from basic endpoint`);
+                return basicResponse.data.seasons;
+            }
+            
+            console.log(`⚠️ No seasons data available for series ${seriesId}`);
+            return [];
         } catch (error) {
             console.error(`Series seasons error for ID ${seriesId}:`, error.message);
             return [];
@@ -219,21 +233,27 @@ class TVDBService {
             const id = `tvdb-${numericId}`;
 
             // Get the name with language preference
-            let selectedName = item.name; // Default to original name
+            let selectedName = item.name || item.primary_title || 'Unknown Title';
             if (item.translations && Object.keys(item.translations).length > 0) {
-                selectedName = this.selectPreferredTranslationFromObject(
+                const translatedName = this.selectPreferredTranslationFromObject(
                     item.translations, 
                     userLanguage
-                ) || item.name;
+                );
+                if (translatedName) {
+                    selectedName = translatedName;
+                }
             }
 
             // Get the description with language preference  
-            let selectedDescription = item.overview; // Default to original overview
+            let selectedDescription = item.overview;
             if (item.overviews && Object.keys(item.overviews).length > 0) {
-                selectedDescription = this.selectPreferredTranslationFromObject(
+                const translatedDescription = this.selectPreferredTranslationFromObject(
                     item.overviews, 
                     userLanguage
-                ) || item.overview;
+                );
+                if (translatedDescription) {
+                    selectedDescription = translatedDescription;
+                }
             }
 
             const meta = {
@@ -244,6 +264,16 @@ class TVDBService {
                 year: item.year || (item.first_air_time ? new Date(item.first_air_time).getFullYear() : undefined),
                 description: selectedDescription
             };
+
+            // Add additional metadata if available
+            if (item.genres && Array.isArray(item.genres)) {
+                meta.genres = item.genres.map(g => g.name || g).filter(Boolean);
+            }
+
+            // Add rating if available
+            if (item.vote_average) {
+                meta.imdbRating = item.vote_average.toString();
+            }
 
             // Remove undefined properties
             Object.keys(meta).forEach(key => meta[key] === undefined && delete meta[key]);
@@ -316,79 +346,22 @@ class TVDBService {
     }
 
     /**
-     * Transform TVDB item to Stremio meta format
+     * Transform TVDB item to Stremio meta format (for search results)
      */
     transformToStremioMeta(item, userLanguage = null) {
-        try {
-            const stremioType = item.type === 'movie' ? 'movie' : 'series';
-            
-            // Debug: Log what data we have for this item
-            console.log(`🔍 Transform search item - Original name: ${item.name}, Type: ${item.type}`);
-            console.log(`🔍 Has translations: ${!!(item.translations && item.translations.nameTranslations)}`);
-            if (item.translations && item.translations.nameTranslations) {
-                console.log(`🔍 Translation count: ${item.translations.nameTranslations.length}`);
-            }
-            
-            // Extract numeric ID from TVDB ID format (e.g., "series-431162" -> "431162")
-            let numericId = item.id;
-            if (typeof item.id === 'string') {
-                const match = item.id.match(/(\d+)$/);
-                if (match) {
-                    numericId = match[1];
-                }
-            }
-            
-            const id = `tvdb-${numericId}`;
-
-            const meta = {
-                id,
-                type: stremioType,
-                name: item.name || item.primary_title || 'Unknown Title'
-            };
-
-            // Use available names from TVDB with language preference
-            if (item.translations && item.translations.nameTranslations && item.translations.nameTranslations.length > 0) {
-                const selectedName = this.selectPreferredTranslation(
-                    item.translations.nameTranslations, 
-                    'name', 
-                    userLanguage
-                );
-                if (selectedName) {
-                    meta.name = selectedName;
-                }
-            } else {
-                console.log(`⚠️ No name translations available for search result, using original: ${meta.name}`);
-            }
-
-            // Add poster if available
-            if (item.image_url) {
-                meta.poster = item.image_url;
-            }
-
-            // Add basic metadata if available
-            if (item.year) {
-                meta.year = item.year;
-            }
-
-            if (item.overview) {
-                meta.description = item.overview;
-            }
-
-            return meta;
-        } catch (error) {
-            console.error('Error transforming item to Stremio meta:', error);
-            return null;
-        }
+        // Delegate to search item transformer
+        return this.transformSearchItemToStremioMeta(item, userLanguage);
     }
 
     /**
      * Transform detailed TVDB data to full Stremio meta format
+     * Based on TMDB addon patterns for proper Stremio compatibility
      */
-    transformDetailedToStremioMeta(item, type, seasonsData = null, userLanguage = null) {
+    transformDetailedToStremioMeta(item, type, seasonsData = null, userLanguage = 'en-US') {
         try {
             const stremioType = type === 'movie' ? 'movie' : 'series';
             
-            // Extract numeric ID from TVDB ID format (e.g., "series-431162" -> "431162")
+            // Extract numeric ID
             let numericId = item.id;
             if (typeof item.id === 'string') {
                 const match = item.id.match(/(\d+)$/);
@@ -399,14 +372,15 @@ class TVDBService {
             
             const id = `tvdb-${numericId}`;
 
+            // Base meta object with required fields
             const meta = {
                 id,
                 type: stremioType,
                 name: item.name || item.primary_title || 'Unknown Title'
             };
 
-            // Use available names from TVDB with language preference
-            if (item.translations && item.translations.nameTranslations && item.translations.nameTranslations.length > 0) {
+            // Apply language preference for name
+            if (item.translations?.nameTranslations?.length > 0) {
                 const selectedName = this.selectPreferredTranslation(
                     item.translations.nameTranslations, 
                     'name', 
@@ -417,14 +391,32 @@ class TVDBService {
                 }
             }
 
-            // Add poster
-            if (item.image_url) {
-                meta.poster = item.image_url;
+            // Add description with language preference
+            if (item.translations?.overviewTranslations?.length > 0) {
+                const selectedDescription = this.selectPreferredTranslation(
+                    item.translations.overviewTranslations,
+                    'overview',
+                    userLanguage
+                );
+                if (selectedDescription) {
+                    meta.description = selectedDescription;
+                }
+            } else if (item.overview) {
+                meta.description = item.overview;
             }
 
-            // Add background
+            // Add poster with fallback
+            if (item.image_url) {
+                meta.poster = item.image_url;
+            } else if (item.image) {
+                meta.poster = item.image;
+            }
+
+            // Add background/fanart
             if (item.fanart_url) {
                 meta.background = item.fanart_url;
+            } else if (item.background) {
+                meta.background = item.background;
             }
 
             // Add year
@@ -432,79 +424,46 @@ class TVDBService {
                 meta.year = parseInt(item.year);
             } else if (item.first_aired) {
                 meta.year = new Date(item.first_aired).getFullYear();
-            }
-
-            // Add description using available languages from TVDB with language preference
-            if (item.overview) {
-                meta.description = item.overview;
-            } else if (item.translations && item.translations.overviewTranslations && item.translations.overviewTranslations.length > 0) {
-                const selectedDescription = this.selectPreferredTranslation(
-                    item.translations.overviewTranslations, 
-                    'overview', 
-                    userLanguage
-                );
-                if (selectedDescription) {
-                    meta.description = selectedDescription;
-                }
+            } else if (item.aired) {
+                meta.year = new Date(item.aired).getFullYear();
             }
 
             // Add genres
-            if (item.genres && Array.isArray(item.genres)) {
+            if (Array.isArray(item.genres)) {
                 meta.genres = item.genres.map(genre => genre.name || genre).filter(Boolean);
             }
 
             // Add cast (actors)
-            if (item.characters && Array.isArray(item.characters)) {
+            if (Array.isArray(item.characters)) {
                 meta.cast = item.characters
-                    .filter(char => char.people && char.people.name)
-                    .map(char => char.people.name)
-                    .slice(0, 15); // Limit to 15 cast members
+                    .filter(c => c.people?.name)
+                    .map(c => c.people.name)
+                    .slice(0, 15);
             }
 
-            // Add director
-            if (item.directors && Array.isArray(item.directors)) {
+            // Add directors
+            if (Array.isArray(item.directors)) {
                 meta.director = item.directors
-                    .filter(dir => dir.people && dir.people.name)
-                    .map(dir => dir.people.name);
+                    .filter(d => d.people?.name)
+                    .map(d => d.people.name);
             }
 
-            // Add writer
-            if (item.writers && Array.isArray(item.writers)) {
+            // Add writers
+            if (Array.isArray(item.writers)) {
                 meta.writer = item.writers
-                    .filter(writer => writer.people && writer.people.name)
-                    .map(writer => writer.people.name);
+                    .filter(w => w.people?.name)
+                    .map(w => w.people.name);
             }
 
             // Add country
             if (item.originalCountry) {
                 meta.country = [item.originalCountry];
-            } else if (item.companies && Array.isArray(item.companies)) {
+            } else if (Array.isArray(item.companies)) {
                 const countries = item.companies
-                    .filter(company => company.country)
-                    .map(company => company.country);
-                if (countries.length > 0) {
-                    meta.country = [...new Set(countries)]; // Remove duplicates
-                }
-            }
-
-            // Add series-specific data
-            if (stremioType === 'series' && seasonsData) {
-                // Filter out seasons without air dates as requested
-                const validSeasons = seasonsData.filter(season => {
-                    return season.air_date || season.aired;
-                });
-
-                if (validSeasons.length > 0) {
-                    meta.seasons = validSeasons.length;
-                    
-                    // Add episode count if available
-                    const totalEpisodes = validSeasons.reduce((total, season) => {
-                        return total + (season.episodeCount || 0);
-                    }, 0);
-                    
-                    if (totalEpisodes > 0) {
-                        meta.episodeCount = totalEpisodes;
-                    }
+                    .filter(c => c.country)
+                    .map(c => c.country);
+                if (countries.length) {
+                    meta.country = [...new Set(countries)];
                 }
             }
 
@@ -514,7 +473,7 @@ class TVDBService {
             }
 
             // Add ratings
-            if (item.rating && item.rating.average) {
+            if (item.rating?.average) {
                 meta.imdbRating = item.rating.average.toString();
             }
 
@@ -530,10 +489,90 @@ class TVDBService {
                 meta.network = item.latestNetwork;
             }
 
-            // Add language (prefer English name)
+            // Add language
             if (item.originalLanguage) {
                 meta.language = item.originalLanguage;
             }
+
+            // CRITICAL: Add series-specific data for Stremio following TMDB addon pattern
+            if (stremioType === 'series') {
+                // For series, we MUST provide seasons and videos array
+                meta.videos = [];
+                meta.seasons = 0;
+                
+                if (Array.isArray(seasonsData) && seasonsData.length > 0) {
+                    // Filter valid seasons (season number > 0)
+                    const validSeasons = seasonsData.filter(season => {
+                        const seasonNumber = season.number || season.seasonNumber || 0;
+                        return seasonNumber > 0;
+                    });
+
+                    if (validSeasons.length > 0) {
+                        meta.seasons = validSeasons.length;
+                        
+                        // Add episode count if available
+                        const totalEpisodes = validSeasons.reduce((total, season) => {
+                            return total + (season.episodeCount || season.episodes?.length || 0);
+                        }, 0);
+                        
+                        if (totalEpisodes > 0) {
+                            meta.episodeCount = totalEpisodes;
+                        }
+
+                        // Generate placeholder videos for Stremio (following TMDB pattern)
+                        const videoMap = new Map(); // Use Map to prevent duplicates
+                        
+                        validSeasons.forEach(season => {
+                            const seasonNumber = season.number || season.seasonNumber;
+                            const episodeCount = season.episodeCount || season.episodes?.length || 1;
+                            
+                            for (let ep = 1; ep <= episodeCount; ep++) {
+                                const videoId = `${seasonNumber}:${ep}`;
+                                if (!videoMap.has(videoId)) {
+                                    videoMap.set(videoId, {
+                                        id: videoId,
+                                        title: `Episode ${ep}`,
+                                        season: seasonNumber,
+                                        episode: ep,
+                                        overview: `Season ${seasonNumber}, Episode ${ep}`,
+                                        thumbnail: null,
+                                        released: null
+                                    });
+                                }
+                            }
+                        });
+                        
+                        meta.videos = Array.from(videoMap.values());
+
+                        // Add behavior hints for series (following TMDB pattern)
+                        meta.behaviorHints = {
+                            defaultVideoId: null,
+                            hasScheduledVideos: true
+                        };
+                    }
+                }
+
+                // If no seasons data, still set proper defaults
+                if (meta.seasons === 0) {
+                    meta.behaviorHints = {
+                        defaultVideoId: null,
+                        hasScheduledVideos: false
+                    };
+                }
+            } else {
+                // For movies, add behavior hints (following TMDB pattern)
+                meta.behaviorHints = {
+                    defaultVideoId: item.imdb_id || id,
+                    hasScheduledVideos: false
+                };
+            }
+
+            // Clean up empty arrays to make response cleaner
+            Object.keys(meta).forEach(key => {
+                if (Array.isArray(meta[key]) && meta[key].length === 0) {
+                    delete meta[key];
+                }
+            });
 
             return meta;
         } catch (error) {
@@ -543,60 +582,129 @@ class TVDBService {
     }
 
     /**
-     * Select preferred translation based on user language preference
+     * Select preferred translation based on user language preference with proper fallbacks
      * Priority: userLanguage -> English -> first available
+     * Mimics TMDB addon pattern for language handling
      */
-    selectPreferredTranslation(translations, fieldName, userLanguage = null) {
+    selectPreferredTranslation(translations, fieldName, userLanguage = 'en-US') {
         if (!translations || !Array.isArray(translations) || translations.length === 0) {
             return null;
         }
 
+        // Normalize user language (e.g., 'fr-FR' -> 'fr')
+        const userLangCode = userLanguage.toLowerCase().split('-')[0];
+        
         // Debug: Log available languages
         const availableLanguages = translations.map(t => t.language).join(', ');
         console.log(`🌐 Available languages for ${fieldName}: ${availableLanguages}`);
-        if (userLanguage) {
-            console.log(`🔍 Looking for user language: ${userLanguage}`);
+        console.log(`🔍 Looking for user language: ${userLanguage} (normalized: ${userLangCode})`);
+
+        // First priority: User's preferred language (exact match)
+        let userLangTranslation = translations.find(t => {
+            const langCode = t.language?.toLowerCase();
+            return langCode === userLanguage.toLowerCase();
+        });
+        
+        if (userLangTranslation && userLangTranslation[fieldName]) {
+            console.log(`✅ Found exact user language match: ${userLangTranslation.language}`);
+            return userLangTranslation[fieldName];
         }
 
-        // First priority: User's preferred language
-        if (userLanguage) {
-            const userLangTranslation = translations.find(t => {
-                const langCode = t.language?.toLowerCase();
-                const matches = langCode === userLanguage.toLowerCase() ||
-                               langCode === `${userLanguage.toLowerCase()}-${userLanguage.toLowerCase()}` ||
-                               langCode?.startsWith(`${userLanguage.toLowerCase()}-`);
-                
-                if (matches) {
-                    console.log(`✅ Found user language match: ${langCode} for ${userLanguage}`);
-                }
-                return matches;
-            });
-            
-            if (userLangTranslation && userLangTranslation[fieldName]) {
-                console.log(`🎯 Using user language translation: ${userLangTranslation[fieldName].substring(0, 50)}...`);
-                return userLangTranslation[fieldName];
-            } else {
-                console.log(`❌ No translation found for user language: ${userLanguage}`);
-            }
+        // Second priority: User's language (base code match - e.g., 'fr' for 'fr-FR')
+        userLangTranslation = translations.find(t => {
+            const langCode = t.language?.toLowerCase().split('-')[0];
+            return langCode === userLangCode;
+        });
+        
+        if (userLangTranslation && userLangTranslation[fieldName]) {
+            console.log(`✅ Found user language base match: ${userLangTranslation.language} for ${userLanguage}`);
+            return userLangTranslation[fieldName];
         }
 
-        // Second priority: English
+        // Third priority: English (any variant)
         const englishTranslation = translations.find(t => {
             const langCode = t.language?.toLowerCase();
             return langCode === 'eng' || langCode === 'en' || 
-                   langCode === 'en-us' || langCode === 'en-gb';
+                   langCode === 'en-us' || langCode === 'en-gb' ||
+                   langCode?.startsWith('en-');
         });
         
         if (englishTranslation && englishTranslation[fieldName]) {
-            console.log(`🇬🇧 Using English fallback: ${englishTranslation[fieldName].substring(0, 50)}...`);
+            console.log(`🇬� Using English fallback: ${englishTranslation.language}`);
             return englishTranslation[fieldName];
         }
 
-        // Third priority: First available translation
+        // Fourth priority: First available translation
         const firstTranslation = translations[0];
         if (firstTranslation && firstTranslation[fieldName]) {
-            console.log(`🔄 Using first available language (${firstTranslation.language}): ${firstTranslation[fieldName].substring(0, 50)}...`);
+            console.log(`🔄 Using first available language (${firstTranslation.language})`);
             return firstTranslation[fieldName];
+        }
+
+        console.log(`❌ No translation found for ${fieldName}`);
+        return null;
+    }
+
+    /**
+     * Select preferred translation from object format (used in search results)
+     * Priority: userLanguage -> English -> first available
+     */
+    selectPreferredTranslationFromObject(translationsObj, userLanguage = 'en-US') {
+        if (!translationsObj || typeof translationsObj !== 'object') {
+            return null;
+        }
+
+        const availableLanguages = Object.keys(translationsObj);
+        console.log(`🌐 Available languages: ${availableLanguages.join(', ')}`);
+        
+        const userLangCode = userLanguage.toLowerCase().split('-')[0];
+        console.log(`🔍 Looking for user language: ${userLanguage} (normalized: ${userLangCode})`);
+
+        // First priority: User's preferred language (exact match)
+        if (translationsObj[userLanguage]) {
+            console.log(`✅ Found exact user language match: ${userLanguage}`);
+            return translationsObj[userLanguage];
+        }
+
+        if (translationsObj[userLanguage.toLowerCase()]) {
+            console.log(`✅ Found user language match (lowercase): ${userLanguage.toLowerCase()}`);
+            return translationsObj[userLanguage.toLowerCase()];
+        }
+        
+        // Second priority: User's language base code
+        if (translationsObj[userLangCode]) {
+            console.log(`✅ Found user language base match: ${userLangCode}`);
+            return translationsObj[userLangCode];
+        }
+        
+        // Try common variations
+        const variations = [
+            userLanguage.toUpperCase(),
+            userLangCode.toUpperCase(),
+            `${userLangCode}-${userLangCode.toUpperCase()}`,
+        ];
+        
+        for (const variation of variations) {
+            if (translationsObj[variation]) {
+                console.log(`✅ Found user language variation: ${variation} for ${userLanguage}`);
+                return translationsObj[variation];
+            }
+        }
+
+        // Third priority: English (any variant)
+        const englishKeys = ['eng', 'en', 'en-us', 'en-gb', 'EN', 'ENG', 'en-US', 'en-GB'];
+        for (const key of englishKeys) {
+            if (translationsObj[key]) {
+                console.log(`🇬🇧 Using English fallback: ${key}`);
+                return translationsObj[key];
+            }
+        }
+
+        // Fourth priority: First available translation
+        const firstKey = availableLanguages[0];
+        if (firstKey && translationsObj[firstKey]) {
+            console.log(`🔄 Using first available language (${firstKey})`);
+            return translationsObj[firstKey];
         }
 
         return null;

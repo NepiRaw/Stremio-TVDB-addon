@@ -134,6 +134,56 @@
             box-shadow: 0 10px 30px rgba(102, 126, 234, 0.4);
         }
 
+        .config-section {
+            margin: 30px 0;
+            padding: 25px;
+            background: rgba(255, 255, 255, 0.8);
+            border-radius: 15px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+        }
+
+        .config-group {
+            margin-bottom: 20px;
+        }
+
+        .config-label {
+            display: block;
+            font-weight: 600;
+            font-size: 16px;
+            color: #333;
+            margin-bottom: 8px;
+            align-items: center;
+        }
+
+        .info-tooltip {
+            margin-left: 8px;
+            color: #667eea;
+            cursor: help;
+            font-size: 14px;
+            font-weight: normal;
+        }
+
+        .language-select {
+            width: 100%;
+            padding: 12px 16px;
+            border: 2px solid #e1e5e9;
+            border-radius: 10px;
+            font-size: 16px;
+            background: white;
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+
+        .language-select:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .language-select:hover {
+            border-color: #667eea;
+        }
+
         .powered-by {
             margin-top: 30px;
             color: #666;
@@ -193,18 +243,68 @@
             <h3>🎬 What You'll Get</h3>
             <ul class="feature-list">
                 <li class="feature-item">
-                    <span class="feature-icon">🎌</span>
-                    <span class="feature-text">Anime</span>
+                    <span class="feature-icon">📺</span>
+                    <span class="feature-text">TV Series</span>
                 </li>
                 <li class="feature-item">
                     <span class="feature-icon">🎬</span>
                     <span class="feature-text">Movies</span>
                 </li>
                 <li class="feature-item">
-                    <span class="feature-icon">📺</span>
-                    <span class="feature-text">TV Series</span>
+                    <span class="feature-icon">🎌</span>
+                    <span class="feature-text">Anime</span>
                 </li>
             </ul>
+        </div>
+
+        <div class="config-section">
+            <div class="config-group">
+                <label for="languageSelect" class="config-label">
+                    🌐 Preferred Language
+                    <span class="info-tooltip" title="Choose your preferred language for metadata. If not available, will fallback to English, then first available language.">ⓘ</span>
+                </label>
+                <select id="languageSelect" class="language-select">
+                    <option value="en-US">English (US) - Default</option>
+                    <option value="es-ES">Spanish (Spain)</option>
+                    <option value="es-MX">Spanish (Mexico)</option>
+                    <option value="fr-FR">French (France)</option>
+                    <option value="de-DE">German</option>
+                    <option value="it-IT">Italian</option>
+                    <option value="pt-BR">Portuguese (Brazil)</option>
+                    <option value="pt-PT">Portuguese (Portugal)</option>
+                    <option value="ru-RU">Russian</option>
+                    <option value="ja-JP">Japanese</option>
+                    <option value="ko-KR">Korean</option>
+                    <option value="zh-CN">Chinese (Simplified)</option>
+                    <option value="zh-TW">Chinese (Traditional)</option>
+                    <option value="ar-SA">Arabic</option>
+                    <option value="hi-IN">Hindi</option>
+                    <option value="tr-TR">Turkish</option>
+                    <option value="pl-PL">Polish</option>
+                    <option value="nl-NL">Dutch</option>
+                    <option value="sv-SE">Swedish</option>
+                    <option value="da-DK">Danish</option>
+                    <option value="no-NO">Norwegian</option>
+                    <option value="fi-FI">Finnish</option>
+                    <option value="he-IL">Hebrew</option>
+                    <option value="th-TH">Thai</option>
+                    <option value="vi-VN">Vietnamese</option>
+                    <option value="id-ID">Indonesian</option>
+                    <option value="ms-MY">Malay</option>
+                    <option value="tl-PH">Filipino</option>
+                    <option value="uk-UA">Ukrainian</option>
+                    <option value="cs-CZ">Czech</option>
+                    <option value="hu-HU">Hungarian</option>
+                    <option value="ro-RO">Romanian</option>
+                    <option value="bg-BG">Bulgarian</option>
+                    <option value="hr-HR">Croatian</option>
+                    <option value="sk-SK">Slovak</option>
+                    <option value="sl-SI">Slovenian</option>
+                    <option value="et-EE">Estonian</option>
+                    <option value="lv-LV">Latvian</option>
+                    <option value="lt-LT">Lithuanian</option>
+                </select>
+            </div>
         </div>
 
         <a href="#" id="installButton" class="install-button">
@@ -223,11 +323,14 @@
         document.getElementById('installButton').addEventListener('click', function(e) {
             e.preventDefault();
             
-            // Get the manifest URL (for manual installation)
-            const manifestUrl = window.location.origin + '/manifest.json';
+            // Get selected language
+            const selectedLanguage = document.getElementById('languageSelect').value;
+            
+            // Create the manifest URL with language parameter
+            const manifestUrl = `${window.location.origin}/${selectedLanguage}/manifest.json`;
             
             // Create the correct Stremio install URL format
-            const stremioUrl = `stremio://${window.location.host}/manifest.json`;
+            const stremioUrl = `stremio://${window.location.host}/${selectedLanguage}/manifest.json`;
             
             // Show loading state
             this.style.background = 'linear-gradient(45deg, #4CAF50, #45a049)';
@@ -246,11 +349,20 @@
             }, 2000);
         });
 
-        // Add loading animation on page load
+        // Load saved language preference
         document.addEventListener('DOMContentLoaded', function() {
             const container = document.querySelector('.container');
             container.style.opacity = '0';
             container.style.transform = 'translateY(30px)';
+            
+            // Load saved language preference
+            const savedLanguage = localStorage.getItem('tvdb-addon-language') || 'en-US';
+            document.getElementById('languageSelect').value = savedLanguage;
+            
+            // Save language preference when changed
+            document.getElementById('languageSelect').addEventListener('change', function() {
+                localStorage.setItem('tvdb-addon-language', this.value);
+            });
             
             setTimeout(() => {
                 container.style.transition = 'all 0.6s ease';

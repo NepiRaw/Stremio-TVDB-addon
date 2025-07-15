@@ -1,14 +1,18 @@
 const packageJson = require('../../package.json');
 
 /**
- * Generate Stremio addon manifest
+ * Generate Stremio addon manifest with language support
  */
-function getManifest() {
+function getManifest(language = 'en-US') {
+    // Validate language code format
+    const isValidLanguage = /^[a-z]{2}-[A-Z]{2}$/.test(language);
+    const finalLanguage = isValidLanguage ? language : 'en-US';
+    
     return {
-        id: 'org.stremio.tvdb-addon',
+        id: `community.stremio.tvdb-addon-${finalLanguage}`,
         version: packageJson.version,
-        name: 'TVDB Catalog',
-        description: 'Search TVDB for movies, series, and anime. Provides comprehensive catalog search functionality.',
+        name: `TVDB Catalog (${finalLanguage})`,
+        description: `Search TVDB for movies, series, and anime with ${finalLanguage} language preference. Provides comprehensive catalog search functionality with metadata in your preferred language.`,
         
         // Resources this addon provides
         resources: ['catalog', 'meta'],
@@ -44,6 +48,12 @@ function getManifest() {
         
         // ID prefixes for content this addon handles
         idPrefixes: ['tvdb-'],
+        
+        // Behavior hints
+        behaviorHints: {
+            configurable: false,
+            configurationRequired: false
+        },
         
         // Additional metadata
         contactEmail: 'addon@example.com',

@@ -1,36 +1,62 @@
 const tvdbService = require('../services/tvdbService');
 
 /**
- * Extract preferred language from Accept-Language header
- * @param {string} acceptLanguage - Accept-Language header value
- * @returns {string|null} - Preferred language code (e.g., 'fr', 'es', 'de') or null
+ * Extract language preference from URL parameter or Accept-Language header
+ * @param {object} req - Express request object
+ * @returns {string} - Language code (e.g., 'fr-FR', 'es-ES')
  */
-function extractPreferredLanguage(acceptLanguage) {
-    if (!acceptLanguage) return null;
-    
-    // Parse Accept-Language header (e.g., "fr-FR,fr;q=0.9,en;q=0.8")
-    const languages = acceptLanguage
-        .split(',')
-        .map(lang => {
-            const parts = lang.trim().split(';');
-            const code = parts[0].trim();
-            const quality = parts[1] ? parseFloat(parts[1].split('=')[1]) : 1.0;
-            return { code, quality };
-        })
-        .sort((a, b) => b.quality - a.quality);
-    
-    // Get the highest priority language that's not English (since English is our fallback)
-    const preferredLang = languages.find(lang => {
-        const langCode = lang.code.toLowerCase();
-        return !langCode.startsWith('en') && langCode !== 'en-us' && langCode !== 'en-gb';
-    });
-    
-    if (preferredLang) {
-        // Convert to 2-letter language code if needed (e.g., 'fr-FR' -> 'fr')
-        return preferredLang.code.split('-')[0].toLowerCase();
+function getLanguagePreference(req) {
+    // First priority: URL parameter (e.g., /es-ES/catalog/...)
+    if (req.params.language) {
+        const urlLang = req.params.language;
+        if (/^[a-z]{2}-[A-Z]{2}$/.test(urlLang)) {
+            return urlLang;
+        }
     }
     
-    return null;
+    // Second priority: Accept-Language header
+    const acceptLanguage = req.headers['accept-language'];
+    if (acceptLanguage) {
+        // Parse Accept-Language header (e.g., "fr-FR,fr;q=0.9,en;q=0.8")
+        const languages = acceptLanguage
+            .split(',')
+            .map(lang => {
+                const parts = lang.trim().split(';');
+                const code = parts[0].trim();
+                const quality = parts[1] ? parseFloat(parts[1].split('=')[1]) : 1.0;
+                return { code, quality };
+            })
+            .sort((a, b) => b.quality - a.quality);
+        
+        // Get the highest priority language
+        const preferredLang = languages[0];
+        if (preferredLang) {
+            // Normalize to full language code
+            const langCode = preferredLang.code.toLowerCase();
+            if (langCode.includes('-')) {
+                const [lang, country] = langCode.split('-');
+                return `${lang}-${country.toUpperCase()}`;
+            } else {
+                // Map common 2-letter codes to full codes
+                const langMap = {
+                    'en': 'en-US',
+                    'es': 'es-ES',
+                    'fr': 'fr-FR',
+                    'de': 'de-DE',
+                    'it': 'it-IT',
+                    'pt': 'pt-BR',
+                    'ja': 'ja-JP',
+                    'ko': 'ko-KR',
+                    'zh': 'zh-CN',
+                    'ru': 'ru-RU'
+                };
+                return langMap[langCode] || 'en-US';
+            }
+        }
+    }
+    
+    // Default: English
+    return 'en-US';
 }
 
 /**
@@ -64,11 +90,10 @@ async function catalogHandler(req, res) {
             return res.json({ metas: [] });
         }
 
-        // Extract user's preferred language from Accept-Language header
-        const acceptLanguage = req.headers['accept-language'];
-        const userLanguage = extractPreferredLanguage(acceptLanguage);
+        // Extract user's preferred language
+        const userLanguage = getLanguagePreference(req);
 
-        console.log(`🔍 Searching ${type} for: "${extraParams.search}"${userLanguage ? ` (user language: ${userLanguage})` : ''}`);
+        console.log(`🔍 Searching ${type} for: "${extraParams.search}" (language: ${userLanguage})`);
 
         // Search TVDB
         const searchResults = await tvdbService.search(extraParams.search, type);
