@@ -1,6 +1,39 @@
 const tvdbService = require('../services/tvdbService');
 
 /**
+ * Extract preferred language from Accept-Language header
+ * @param {string} acceptLanguage - Accept-Language header value
+ * @returns {string|null} - Preferred language code (e.g., 'fr', 'es', 'de') or null
+ */
+function extractPreferredLanguage(acceptLanguage) {
+    if (!acceptLanguage) return null;
+    
+    // Parse Accept-Language header (e.g., "fr-FR,fr;q=0.9,en;q=0.8")
+    const languages = acceptLanguage
+        .split(',')
+        .map(lang => {
+            const parts = lang.trim().split(';');
+            const code = parts[0].trim();
+            const quality = parts[1] ? parseFloat(parts[1].split('=')[1]) : 1.0;
+            return { code, quality };
+        })
+        .sort((a, b) => b.quality - a.quality);
+    
+    // Get the highest priority language that's not English (since English is our fallback)
+    const preferredLang = languages.find(lang => {
+        const langCode = lang.code.toLowerCase();
+        return !langCode.startsWith('en') && langCode !== 'en-us' && langCode !== 'en-gb';
+    });
+    
+    if (preferredLang) {
+        // Convert to 2-letter language code if needed (e.g., 'fr-FR' -> 'fr')
+        return preferredLang.code.split('-')[0].toLowerCase();
+    }
+    
+    return null;
+}
+
+/**
  * Handle metadata requests for specific content
  * Route: /meta/:type/:id.json
  */
@@ -23,7 +56,11 @@ async function metaHandler(req, res) {
             return res.status(400).json({ error: 'Invalid TVDB ID' });
         }
 
-        console.log(`📋 Getting metadata for ${type} ID: ${tvdbId}`);
+        // Extract user's preferred language from Accept-Language header
+        const acceptLanguage = req.headers['accept-language'];
+        const userLanguage = extractPreferredLanguage(acceptLanguage);
+        
+        console.log(`📋 Getting metadata for ${type} ID: ${tvdbId}${userLanguage ? ` (user language: ${userLanguage})` : ''}`);
 
         let detailedData = null;
         let seasonsData = null;
@@ -47,7 +84,7 @@ async function metaHandler(req, res) {
         }
 
         // Transform to Stremio meta format
-        const meta = tvdbService.transformDetailedToStremioMeta(detailedData, type, seasonsData);
+        const meta = tvdbService.transformDetailedToStremioMeta(detailedData, type, seasonsData, userLanguage);
         
         if (!meta) {
             return res.status(500).json({ error: 'Failed to process metadata' });

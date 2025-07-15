@@ -1,14 +1,5 @@
-const packageJson = require('../../package.json');
-
-/**
- * Generate responsive installation page HTML
- */
-function generateInstallationPage(manifestUrl) {
-    return `<!DOCTYPE html>
-<html lan                <li class="feature-item">
-                    <div class="feature-icon">🍃</div>
-                    <div class="feature-text">Anime</div>
-                </li>n">
+<!DOCTYPE html>
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -115,6 +106,7 @@ function generateInstallationPage(manifestUrl) {
         .feature-icon {
             font-size: 2rem;
             margin-bottom: 10px;
+            display: block;
         }
 
         .feature-text {
@@ -191,7 +183,7 @@ function generateInstallationPage(manifestUrl) {
         <img src="https://thetvdb.com/images/logo.svg" alt="TVDB Logo" class="logo">
         
         <h1>TVDB Catalog</h1>
-        <div class="version">Version ${packageJson.version}</div>
+        <div class="version" id="version">Version {{VERSION}}</div>
         
         <div class="description">
             A comprehensive Stremio addon that brings you the vast library of The TV Database with detailed metadata for movies, series, and anime.
@@ -201,16 +193,16 @@ function generateInstallationPage(manifestUrl) {
             <h3>🎬 What You'll Get</h3>
             <ul class="feature-list">
                 <li class="feature-item">
-                    <div class="feature-icon">�</div>
-                    <div class="feature-text">Anime</div>
+                    <span class="feature-icon">🎌</span>
+                    <span class="feature-text">Anime</span>
                 </li>
                 <li class="feature-item">
-                    <div class="feature-icon">🎬</div>
-                    <div class="feature-text">Movies</div>
+                    <span class="feature-icon">🎬</span>
+                    <span class="feature-text">Movies</span>
                 </li>
                 <li class="feature-item">
-                    <div class="feature-icon">📺</div>
-                    <div class="feature-text">TV Series</div>
+                    <span class="feature-icon">📺</span>
+                    <span class="feature-text">TV Series</span>
                 </li>
             </ul>
         </div>
@@ -232,10 +224,10 @@ function generateInstallationPage(manifestUrl) {
             e.preventDefault();
             
             // Get the manifest URL (for manual installation)
-            const manifestUrl = '${manifestUrl}';
+            const manifestUrl = window.location.origin + '/manifest.json';
             
             // Create the correct Stremio install URL format
-            const stremioUrl = \`stremio://\${window.location.host}/manifest.json\`;
+            const stremioUrl = `stremio://${window.location.host}/manifest.json`;
             
             // Show loading state
             this.style.background = 'linear-gradient(45deg, #4CAF50, #45a049)';
@@ -246,7 +238,7 @@ function generateInstallationPage(manifestUrl) {
             
             // Fallback: Show manual installation instructions
             setTimeout(() => {
-                alert(\`If Stremio didn't open automatically, copy this URL and paste it in Stremio's addon installation:\\n\\n\${manifestUrl}\`);
+                alert(`If Stremio didn't open automatically, copy this URL and paste it in Stremio's addon installation:\n\n${manifestUrl}`);
                 
                 // Reset button
                 this.style.background = 'linear-gradient(45deg, #667eea, #764ba2)';
@@ -268,9 +260,4 @@ function generateInstallationPage(manifestUrl) {
         });
     </script>
 </body>
-</html>`;
-}
-
-module.exports = {
-    generateInstallationPage
-};
+</html>

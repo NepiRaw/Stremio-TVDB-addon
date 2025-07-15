@@ -1,4 +1,6 @@
-const { generateInstallationPage } = require('../templates/installationPage');
+const fs = require('fs');
+const path = require('path');
+const packageJson = require('../../package.json');
 
 /**
  * Handle installation page requests
@@ -6,10 +8,11 @@ const { generateInstallationPage } = require('../templates/installationPage');
  */
 async function installationPageHandler(req, res) {
     try {
-        const baseUrl = `${req.protocol}://${req.get('host')}`;
-        const manifestUrl = `${baseUrl}/manifest.json`;
+        const htmlPath = path.join(__dirname, '../../public/index.html');
+        let html = fs.readFileSync(htmlPath, 'utf8');
         
-        const html = generateInstallationPage(manifestUrl);
+        // Replace template variables
+        html = html.replace('{{VERSION}}', packageJson.version);
         
         res.setHeader('Content-Type', 'text/html');
         res.send(html);

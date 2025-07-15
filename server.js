@@ -18,7 +18,7 @@ app.use(cors());
 app.use(express.json());
 app.use(requestLogger);
 
-// Serve static files
+// Serve static files (excluding public directory which contains templates)
 app.use('/static', express.static(path.join(__dirname, 'src', 'static')));
 
 // Routes
