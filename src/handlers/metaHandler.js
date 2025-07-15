@@ -122,8 +122,8 @@ async function metaHandler(req, res) {
             return res.status(404).json({ error: 'Content not found' });
         }
 
-        // Transform to Stremio meta format
-        const meta = tvdbService.transformDetailedToStremioMeta(detailedData, type, seasonsData, userLanguage);
+        // Transform to Stremio meta format (now async)
+        const meta = await tvdbService.transformDetailedToStremioMeta(detailedData, type, seasonsData, userLanguage);
         
         if (!meta) {
             return res.status(500).json({ error: 'Failed to process metadata' });

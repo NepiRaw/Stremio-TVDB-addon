@@ -2,6 +2,17 @@ const axios = require('axios');
 
 /**
  * TVDB API Service
+ * Enhanced with Trakt addon patterns for robust, content-agnostic design
+ * 
+ * Key Features:
+ * - TVDB v4 API with JWT authentication
+ * - Correct TVDB language codes (3-char: eng, fra, spa, etc.)
+ * - Enhanced image handling with multiple fallback sources
+ * - Content-agnostic metadata transformation
+ * - Comprehensive language preference chains
+ * - Robust error handling and data validation
+ * - Proper Stremio series/episode structure
+ * 
  * Handles authentication, API calls, and data transformation for TVDB API
  */
 class TVDBService {
@@ -143,22 +154,62 @@ class TVDBService {
     }
 
     /**
-     * Get seasons for a series
+     * Get artwork for a series/movie using TVDB v4 artwork endpoints
+     */
+    async getArtwork(entityType, entityId, language = 'eng') {
+        try {
+            const endpoint = `/${entityType}/${entityId}/artworks`;
+            // Remove invalid type parameter - let API return all artwork types
+            const params = {
+                lang: language
+            };
+            
+            const response = await this.makeRequest(endpoint, params);
+            const artworks = response?.data?.artworks || [];
+            
+            const artwork = {
+                poster: null,
+                background: null
+            };
+            
+            // Extract poster and background/fanart based on type IDs
+            for (const art of artworks) {
+                // Type 2 = Poster, Type 3 = Fanart/Background
+                if ((art.type === 2 || art.type === '2') && !artwork.poster && art.image) {
+                    artwork.poster = art.image;
+                }
+                if ((art.type === 3 || art.type === '3') && !artwork.background && art.image) {
+                    artwork.background = art.image;
+                }
+                // Also check for type names if available
+                if (art.typeName?.toLowerCase().includes('poster') && !artwork.poster && art.image) {
+                    artwork.poster = art.image;
+                }
+                if ((art.typeName?.toLowerCase().includes('fanart') || art.typeName?.toLowerCase().includes('background')) 
+                    && !artwork.background && art.image) {
+                    artwork.background = art.image;
+                }
+            }
+            
+            return artwork;
+        } catch (error) {
+            console.error(`Artwork fetch error for ${entityType} ${entityId}:`, error.message);
+            return { poster: null, background: null };
+        }
+    }
+
+    /**
+     * Get seasons for a series using proper TVDB v4 endpoints
      */
     async getSeriesSeasons(seriesId) {
         try {
-            // Try the extended endpoint first, which often includes seasons
-            const extendedResponse = await this.makeRequest(`/series/${seriesId}/extended`);
-            if (extendedResponse?.data?.seasons) {
-                console.log(`📺 Got ${extendedResponse.data.seasons.length} seasons from extended endpoint`);
-                return extendedResponse.data.seasons;
-            }
+            // Use the extended endpoint to get seasons with episodes
+            const response = await this.makeRequest(`/series/${seriesId}/extended`);
+            const seasons = response?.data?.seasons || [];
             
-            // Fallback to basic series info that might include seasons
-            const basicResponse = await this.makeRequest(`/series/${seriesId}`);
-            if (basicResponse?.data?.seasons) {
-                console.log(`📺 Got ${basicResponse.data.seasons.length} seasons from basic endpoint`);
-                return basicResponse.data.seasons;
+            if (seasons.length > 0) {
+                console.log(`📺 Got ${seasons.length} seasons for series ${seriesId}`);
+                return seasons;
             }
             
             console.log(`⚠️ No seasons data available for series ${seriesId}`);
@@ -170,29 +221,145 @@ class TVDBService {
     }
 
     /**
-     * Get episodes for a season
+     * Get episodes for a series using TVDB v4 episodes endpoint
      */
-    async getSeasonEpisodes(seriesId, seasonId) {
+    async getSeriesEpisodes(seriesId, seasonType = 'default') {
         try {
-            const response = await this.makeRequest(`/series/${seriesId}/seasons/${seasonId}/episodes`);
-            return response.data || [];
+            const response = await this.makeRequest(`/series/${seriesId}/episodes/${seasonType}`, { page: 0 });
+            const episodes = response?.data?.episodes || [];
+            
+            console.log(`📺 Got ${episodes.length} episodes for series ${seriesId}`);
+            return episodes;
         } catch (error) {
-            console.error(`Season episodes error for series ${seriesId}, season ${seasonId}:`, error.message);
+            console.error(`Series episodes error for ID ${seriesId}:`, error.message);
             return [];
         }
     }
 
     /**
-     * Get extended information including episodes count, runtime, etc.
+     * Extract IMDB ID from TVDB remoteIds array
      */
-    async getSeriesExtended(seriesId) {
+    extractImdbId(item) {
+        if (item.remoteIds && Array.isArray(item.remoteIds)) {
+            const imdbRemote = item.remoteIds.find(remote => 
+                remote.sourceName?.toLowerCase() === 'imdb' || 
+                remote.type === 2 || // IMDB type in TVDB
+                (remote.id && remote.id.startsWith('tt'))
+            );
+            
+            if (imdbRemote && imdbRemote.id) {
+                return imdbRemote.id.startsWith('tt') ? imdbRemote.id : `tt${imdbRemote.id}`;
+            }
+        }
+        
+        // Fallback: check for direct imdb field
+        if (item.imdb && typeof item.imdb === 'string') {
+            return item.imdb.startsWith('tt') ? item.imdb : `tt${item.imdb}`;
+        }
+        
+        return null;
+    }
+
+    /**
+     * Get translation for entity using TVDB v4 translation endpoints
+     */
+    async getTranslation(entityType, entityId, language) {
         try {
-            const response = await this.makeRequest(`/series/${seriesId}/extended`);
-            return response.data;
+            // Map user language to TVDB 3-character code
+            const tvdbLang = this.mapToTvdbLanguage(language);
+            const endpoint = `/${entityType}/${entityId}/translations/${tvdbLang}`;
+            
+            const response = await this.makeRequest(endpoint);
+            return response?.data || null;
         } catch (error) {
-            console.error(`Series extended error for ID ${seriesId}:`, error.message);
+            console.error(`Translation fetch error for ${entityType} ${entityId} in ${language}:`, error.message);
             return null;
         }
+    }
+
+    /**
+     * Map user language to TVDB 3-character language code
+     */
+    mapToTvdbLanguage(userLanguage) {
+        const languageMap = {
+            'en': 'eng', 'en-US': 'eng', 'en-us': 'eng', 'EN': 'eng',
+            'fr': 'fra', 'fr-FR': 'fra', 'fr-fr': 'fra', 'FR': 'fra',
+            'es': 'spa', 'es-ES': 'spa', 'es-es': 'spa', 'ES': 'spa',
+            'de': 'deu', 'de-DE': 'deu', 'de-de': 'deu', 'DE': 'deu',
+            'it': 'ita', 'it-IT': 'ita', 'it-it': 'ita', 'IT': 'ita',
+            'pt': 'por', 'pt-BR': 'por', 'pt-br': 'por', 'PT': 'por',
+            'ja': 'jpn', 'ja-JP': 'jpn', 'ja-jp': 'jpn', 'JA': 'jpn',
+            'ko': 'kor', 'ko-KR': 'kor', 'ko-kr': 'kor', 'KO': 'kor',
+            'zh': 'chi', 'zh-CN': 'chi', 'zh-cn': 'chi', 'ZH': 'chi',
+            'ar': 'ara', 'ar-SA': 'ara', 'ar-sa': 'ara', 'AR': 'ara',
+            'ru': 'rus', 'ru-RU': 'rus', 'ru-ru': 'rus', 'RU': 'rus'
+        };
+        
+        return languageMap[userLanguage] || languageMap[userLanguage?.toLowerCase()] || 'eng';
+    }
+
+    /**
+     * Select preferred translation from an object of language-keyed translations
+     * Handles the language data structure returned by TVDB search API
+     */
+    selectPreferredTranslationFromObject(translationsObj, userLanguage = null) {
+        if (!translationsObj || typeof translationsObj !== 'object') {
+            return null;
+        }
+
+        const availableLanguages = Object.keys(translationsObj);
+        if (availableLanguages.length === 0) {
+            return null;
+        }
+
+        console.log(`🌐 Available languages: ${availableLanguages.join(', ')}`);
+
+        if (userLanguage) {
+            console.log(`🔍 Looking for user language: ${userLanguage} (normalized: ${userLanguage.split('-')[0]})`);
+            
+            // Map user language to TVDB format
+            const tvdbLang = this.mapToTvdbLanguage(userLanguage);
+            
+            // Priority 1: Exact TVDB language match
+            if (translationsObj[tvdbLang]) {
+                console.log(`✅ Found exact language match: ${tvdbLang}`);
+                return translationsObj[tvdbLang];
+            }
+            
+            // Priority 2: Base language match (e.g., 'es' for 'es-ES')
+            const baseLang = userLanguage.split('-')[0].toLowerCase();
+            const baseLanguageMap = {
+                'en': 'eng', 'fr': 'fra', 'es': 'spa', 'de': 'deu', 
+                'it': 'ita', 'pt': 'por', 'ja': 'jpn', 'ko': 'kor',
+                'zh': 'chi', 'ar': 'ara', 'ru': 'rus'
+            };
+            
+            const mappedBaseLang = baseLanguageMap[baseLang];
+            if (mappedBaseLang && translationsObj[mappedBaseLang]) {
+                console.log(`✅ Found base language match: ${mappedBaseLang}`);
+                return translationsObj[mappedBaseLang];
+            }
+            
+            // Priority 3: Language family match (find any matching base)
+            for (const lang of availableLanguages) {
+                if (lang.startsWith(mappedBaseLang)) {
+                    console.log(`✅ Found language family match: ${lang}`);
+                    return translationsObj[lang];
+                }
+            }
+            
+            // Priority 4: English fallback
+            if (translationsObj['eng'] || translationsObj['en']) {
+                const englishKey = translationsObj['eng'] ? 'eng' : 'en';
+                console.log(`🇬🇧 Using English fallback: ${englishKey}`);
+                return translationsObj[englishKey];
+            }
+        }
+        
+        // Fallback: First available language
+        const firstLang = availableLanguages[0];
+        console.log(`🔄 Using first available language (${firstLang})`);
+        return translationsObj[firstLang];
     }
 
     /**
@@ -259,20 +426,77 @@ class TVDBService {
             const meta = {
                 id,
                 type: stremioType,
-                name: selectedName,
-                poster: item.image_url || item.thumbnail,
-                year: item.year || (item.first_air_time ? new Date(item.first_air_time).getFullYear() : undefined),
-                description: selectedDescription
+                name: selectedName
             };
 
-            // Add additional metadata if available
-            if (item.genres && Array.isArray(item.genres)) {
-                meta.genres = item.genres.map(g => g.name || g).filter(Boolean);
+            // Enhanced poster with multiple fallbacks (Trakt pattern)
+            const posterSources = [
+                item.image_url,       // Primary poster
+                item.poster,          // Explicit poster field  
+                item.image,           // Secondary image
+                item.thumbnail        // Fallback to thumbnail
+            ];
+            
+            for (const source of posterSources) {
+                if (source && source.trim()) {
+                    meta.poster = source;
+                    break;
+                }
             }
 
-            // Add rating if available
-            if (item.vote_average) {
-                meta.imdbRating = item.vote_average.toString();
+            // Enhanced year extraction
+            const yearSources = [
+                item.year,
+                item.first_air_time ? new Date(item.first_air_time).getFullYear() : null,
+                item.aired ? new Date(item.aired).getFullYear() : null,
+                item.first_aired ? new Date(item.first_aired).getFullYear() : null
+            ];
+            
+            for (const year of yearSources) {
+                if (year && year > 1800 && year <= new Date().getFullYear() + 5) {
+                    meta.year = year;
+                    break;
+                }
+            }
+
+            // Add description 
+            if (selectedDescription) {
+                meta.description = selectedDescription;
+            }
+
+            // Enhanced genre handling with content-agnostic approach (Trakt pattern)
+            if (item.genres && Array.isArray(item.genres)) {
+                meta.genres = item.genres
+                    .map(genre => {
+                        // Support both object and string formats
+                        if (typeof genre === 'object') {
+                            return genre.name || genre.label || genre.genre || genre;
+                        }
+                        return genre;
+                    })
+                    .filter(g => g && typeof g === 'string' && g.trim().length > 0)
+                    .map(g => g.trim());
+                
+                // Only add if we have valid genres
+                if (meta.genres.length === 0) {
+                    delete meta.genres;
+                }
+            }
+
+            // Enhanced ratings with multiple sources (Trakt pattern)
+            const ratingSources = [
+                item.vote_average,        // Vote average
+                item.rating?.average,     // TVDB average rating
+                item.score,              // Score field
+                item.imdb_rating,        // Direct IMDB rating
+                item.rating              // Simple rating field
+            ];
+            
+            for (const rating of ratingSources) {
+                if (rating && !isNaN(rating) && rating > 0) {
+                    meta.imdbRating = rating.toString();
+                    break;
+                }
             }
 
             // Remove undefined properties
@@ -286,66 +510,6 @@ class TVDBService {
     }
 
     /**
-     * Select preferred translation from object format (used in search results)
-     * Priority: userLanguage -> English -> first available
-     */
-    selectPreferredTranslationFromObject(translationsObj, userLanguage = null) {
-        if (!translationsObj || typeof translationsObj !== 'object') {
-            return null;
-        }
-
-        const availableLanguages = Object.keys(translationsObj);
-        console.log(`🌐 Available languages: ${availableLanguages.join(', ')}`);
-        
-        if (userLanguage) {
-            console.log(`🔍 Looking for user language: ${userLanguage}`);
-        }
-
-        // First priority: User's preferred language
-        if (userLanguage) {
-            // Try exact match first
-            if (translationsObj[userLanguage]) {
-                console.log(`✅ Found exact user language match: ${userLanguage}`);
-                return translationsObj[userLanguage];
-            }
-            
-            // Try common variations
-            const variations = [
-                userLanguage.toLowerCase(),
-                userLanguage.toUpperCase(),
-                userLanguage.substring(0, 2), // e.g., 'fr' from 'fr-FR'
-            ];
-            
-            for (const variation of variations) {
-                if (translationsObj[variation]) {
-                    console.log(`✅ Found user language variation: ${variation} for ${userLanguage}`);
-                    return translationsObj[variation];
-                }
-            }
-            
-            console.log(`❌ No translation found for user language: ${userLanguage}`);
-        }
-
-        // Second priority: English
-        const englishKeys = ['eng', 'en', 'en-us', 'en-gb'];
-        for (const key of englishKeys) {
-            if (translationsObj[key]) {
-                console.log(`🇬🇧 Using English fallback: ${key}`);
-                return translationsObj[key];
-            }
-        }
-
-        // Third priority: First available translation
-        const firstKey = availableLanguages[0];
-        if (firstKey && translationsObj[firstKey]) {
-            console.log(`🔄 Using first available language (${firstKey})`);
-            return translationsObj[firstKey];
-        }
-
-        return null;
-    }
-
-    /**
      * Transform TVDB item to Stremio meta format (for search results)
      */
     transformToStremioMeta(item, userLanguage = null) {
@@ -355,9 +519,9 @@ class TVDBService {
 
     /**
      * Transform detailed TVDB data to full Stremio meta format
-     * Based on TMDB addon patterns for proper Stremio compatibility
+     * Completely rewritten to use proper TVDB v4 API patterns
      */
-    transformDetailedToStremioMeta(item, type, seasonsData = null, userLanguage = 'en-US') {
+    async transformDetailedToStremioMeta(item, type, seasonsData = null, userLanguage = 'en-US') {
         try {
             const stremioType = type === 'movie' ? 'movie' : 'series';
             
@@ -376,56 +540,103 @@ class TVDBService {
             const meta = {
                 id,
                 type: stremioType,
-                name: item.name || item.primary_title || 'Unknown Title'
+                name: item.name || 'Unknown Title'
             };
 
-            // Apply language preference for name
-            if (item.translations?.nameTranslations?.length > 0) {
-                const selectedName = this.selectPreferredTranslation(
-                    item.translations.nameTranslations, 
-                    'name', 
-                    userLanguage
-                );
-                if (selectedName) {
-                    meta.name = selectedName;
+            // Get translations using TVDB v4 translation endpoints
+            const tvdbLang = this.mapToTvdbLanguage(userLanguage);
+            console.log(`🌐 Fetching ${stremioType} translations for language: ${tvdbLang}`);
+            
+            const translation = await this.getTranslation(stremioType === 'movie' ? 'movies' : 'series', numericId, tvdbLang);
+            
+            if (translation && translation.name && translation.name.trim()) {
+                meta.name = translation.name;
+                console.log(`✅ Using translated name: ${meta.name}`);
+                
+                if (translation.overview && translation.overview.trim()) {
+                    meta.description = translation.overview;
+                    console.log(`✅ Using translated description`);
                 }
+            } else {
+                // Try English fallback if requested language not available
+                if (tvdbLang !== 'eng') {
+                    console.log(`⚠️ No ${tvdbLang} translation found, trying English fallback`);
+                    const englishTranslation = await this.getTranslation(stremioType === 'movie' ? 'movies' : 'series', numericId, 'eng');
+                    
+                    if (englishTranslation && englishTranslation.name && englishTranslation.name.trim()) {
+                        meta.name = englishTranslation.name;
+                        console.log(`🇬🇧 Using English fallback name: ${meta.name}`);
+                        
+                        if (englishTranslation.overview && englishTranslation.overview.trim()) {
+                            meta.description = englishTranslation.overview;
+                            console.log(`🇬🇧 Using English fallback description`);
+                        }
+                    }
+                }
+                
+                // Final fallback to original data
+                if (!meta.description && item.overview) {
+                    meta.description = item.overview;
+                    console.log(`🔄 Using original description`);
+                }
+                
+                console.log(`🔄 Final name: ${meta.name}`);
             }
 
-            // Add description with language preference
-            if (item.translations?.overviewTranslations?.length > 0) {
-                const selectedDescription = this.selectPreferredTranslation(
-                    item.translations.overviewTranslations,
-                    'overview',
-                    userLanguage
-                );
-                if (selectedDescription) {
-                    meta.description = selectedDescription;
-                }
-            } else if (item.overview) {
-                meta.description = item.overview;
-            }
-
-            // Add poster with fallback
-            if (item.image_url) {
-                meta.poster = item.image_url;
+            // Get artwork using TVDB v4 artwork endpoints
+            console.log(`🎨 Fetching artwork for ${stremioType} ${numericId}`);
+            const artwork = await this.getArtwork(stremioType === 'movie' ? 'movies' : 'series', numericId, tvdbLang);
+            
+            if (artwork.poster) {
+                meta.poster = artwork.poster;
+                console.log(`✅ Got poster from artwork API`);
             } else if (item.image) {
                 meta.poster = item.image;
+                console.log(`🔄 Using fallback poster`);
+            }
+            
+            if (artwork.background) {
+                meta.background = artwork.background;
+                console.log(`✅ Got background from artwork API`);
+            } else if (item.image) {
+                meta.background = item.image; // Fallback to poster as background
+                console.log(`🔄 Using poster as background fallback`);
             }
 
-            // Add background/fanart
-            if (item.fanart_url) {
-                meta.background = item.fanart_url;
-            } else if (item.background) {
-                meta.background = item.background;
+            // Extract proper IMDB ID from remoteIds
+            const imdbId = this.extractImdbId(item);
+            if (imdbId) {
+                meta.imdb_id = imdbId;
+                console.log(`✅ Found IMDB ID: ${imdbId}`);
             }
+
+            // Note: TVDB ratings don't match IMDB ratings (e.g., Breaking Bad: TVDB=3.7, IMDB=9.5)
+            // Commenting out IMDB rating extraction from TVDB for now
+            /*
+            // Add IMDB rating as string (required by Stremio SDK)
+            const ratingSources = [
+                item.score ? item.score / 1000000 : null,    // TVDB score appears to be scaled (3686327 -> 3.686327)
+                item.rating?.average,          // TVDB average rating
+                item.averageRating,           // Alternative rating field
+                item.siteRating,              // Site rating
+                item.communityRating          // Community rating
+            ];
+            
+            for (const rating of ratingSources) {
+                if (rating && !isNaN(rating) && rating > 0 && rating <= 10) {
+                    // Stremio SDK requires imdbRating as string
+                    meta.imdbRating = rating.toFixed(1);
+                    console.log(`✅ Found rating: ${meta.imdbRating} (source: ${rating})`);
+                    break;
+                }
+            }
+            */
 
             // Add year
             if (item.year) {
                 meta.year = parseInt(item.year);
-            } else if (item.first_aired) {
-                meta.year = new Date(item.first_aired).getFullYear();
-            } else if (item.aired) {
-                meta.year = new Date(item.aired).getFullYear();
+            } else if (item.firstAired) {
+                meta.year = new Date(item.firstAired).getFullYear();
             }
 
             // Add genres
@@ -433,60 +644,26 @@ class TVDBService {
                 meta.genres = item.genres.map(genre => genre.name || genre).filter(Boolean);
             }
 
-            // Add cast (actors)
+            // Add cast (characters)
             if (Array.isArray(item.characters)) {
                 meta.cast = item.characters
-                    .filter(c => c.people?.name)
-                    .map(c => c.people.name)
+                    .filter(c => c.people?.name || c.personName)
+                    .map(c => c.people?.name || c.personName)
                     .slice(0, 15);
-            }
-
-            // Add directors
-            if (Array.isArray(item.directors)) {
-                meta.director = item.directors
-                    .filter(d => d.people?.name)
-                    .map(d => d.people.name);
-            }
-
-            // Add writers
-            if (Array.isArray(item.writers)) {
-                meta.writer = item.writers
-                    .filter(w => w.people?.name)
-                    .map(w => w.people.name);
             }
 
             // Add country
             if (item.originalCountry) {
                 meta.country = [item.originalCountry];
-            } else if (Array.isArray(item.companies)) {
-                const countries = item.companies
-                    .filter(c => c.country)
-                    .map(c => c.country);
-                if (countries.length) {
-                    meta.country = [...new Set(countries)];
-                }
+            } else if (item.country) {
+                meta.country = [item.country];
             }
 
             // Add runtime
             if (item.runtime) {
                 meta.runtime = `${item.runtime} min`;
-            }
-
-            // Add ratings
-            if (item.rating?.average) {
-                meta.imdbRating = item.rating.average.toString();
-            }
-
-            // Add status for series
-            if (stremioType === 'series' && item.status) {
-                meta.status = item.status.name || item.status;
-            }
-
-            // Add network/studio
-            if (item.originalNetwork) {
-                meta.network = item.originalNetwork;
-            } else if (item.latestNetwork) {
-                meta.network = item.latestNetwork;
+            } else if (item.averageRuntime) {
+                meta.runtime = `${item.averageRuntime} min`;
             }
 
             // Add language
@@ -494,57 +671,203 @@ class TVDBService {
                 meta.language = item.originalLanguage;
             }
 
-            // CRITICAL: Add series-specific data for Stremio following TMDB addon pattern
+            // Add network
+            if (item.originalNetwork?.name) {
+                meta.network = item.originalNetwork.name;
+            } else if (item.latestNetwork?.name) {
+                meta.network = item.latestNetwork.name;
+            }
+
+            // CRITICAL: Add series-specific data for Stremio
             if (stremioType === 'series') {
-                // For series, we MUST provide seasons and videos array
                 meta.videos = [];
                 meta.seasons = 0;
                 
                 if (Array.isArray(seasonsData) && seasonsData.length > 0) {
-                    // Filter valid seasons (season number > 0)
+                    // Filter valid seasons - only use "Aired Order" (official) seasons to avoid duplicates
+                    // Also filter out seasons without aired episodes
+                    const currentDate = new Date();
                     const validSeasons = seasonsData.filter(season => {
-                        const seasonNumber = season.number || season.seasonNumber || 0;
-                        return seasonNumber > 0;
+                        // Only include official "Aired Order" seasons (not DVD or Absolute order)
+                        if (season.type?.type !== 'official') {
+                            return false;
+                        }
+                        
+                        const seasonNumber = season.number;
+                        
+                        // Include Season 0 (specials) if it exists
+                        if (seasonNumber === 0) {
+                            return true; // Include specials from aired order
+                        }
+                        
+                        // For regular seasons (1, 2, 3, etc.) - check if they have aired content
+                        if (seasonNumber >= 1) {
+                            // We'll verify this season has aired episodes during episode processing
+                            return true; // Include all numbered seasons from aired order initially
+                        }
+                        
+                        // Filter out invalid/undefined season numbers
+                        return false;
+                    });
+
+                    console.log(`📺 Filtered to ${validSeasons.length} official "Aired Order" seasons (from ${seasonsData.length} total)`);
+
+                    // Sort seasons: Season 0 (specials) last, others in ascending order
+                    validSeasons.sort((a, b) => {
+                        const aNum = a.number || 0;
+                        const bNum = b.number || 0;
+                        
+                        // Season 0 goes to the end
+                        if (aNum === 0 && bNum !== 0) return 1;
+                        if (bNum === 0 && aNum !== 0) return -1;
+                        
+                        // Regular sorting for other seasons
+                        return aNum - bNum;
                     });
 
                     if (validSeasons.length > 0) {
                         meta.seasons = validSeasons.length;
+                        console.log(`📺 Processing ${validSeasons.length} seasons (including specials if available)`);
                         
-                        // Add episode count if available
-                        const totalEpisodes = validSeasons.reduce((total, season) => {
-                            return total + (season.episodeCount || season.episodes?.length || 0);
-                        }, 0);
-                        
-                        if (totalEpisodes > 0) {
-                            meta.episodeCount = totalEpisodes;
-                        }
-
-                        // Generate placeholder videos for Stremio (following TMDB pattern)
-                        const videoMap = new Map(); // Use Map to prevent duplicates
-                        
-                        validSeasons.forEach(season => {
-                            const seasonNumber = season.number || season.seasonNumber;
-                            const episodeCount = season.episodeCount || season.episodes?.length || 1;
+                        // Get episodes for better season/episode structure
+                        try {
+                            const episodes = await this.getSeriesEpisodes(numericId);
                             
-                            for (let ep = 1; ep <= episodeCount; ep++) {
-                                const videoId = `${seasonNumber}:${ep}`;
-                                if (!videoMap.has(videoId)) {
-                                    videoMap.set(videoId, {
-                                        id: videoId,
-                                        title: `Episode ${ep}`,
-                                        season: seasonNumber,
-                                        episode: ep,
-                                        overview: `Season ${seasonNumber}, Episode ${ep}`,
-                                        thumbnail: null,
-                                        released: null
+                            if (episodes.length > 0) {
+                                console.log(`📺 Got ${episodes.length} episodes from API`);
+                                
+                                // PERFORMANCE OPTIMIZATION: Get all episode translations in bulk using TVDB v4 bulk translation endpoint
+                                let translatedEpisodes = null;
+                                try {
+                                    console.log(`🌐 Fetching bulk episode translations for language: ${tvdbLang}`);
+                                    const bulkResponse = await this.makeRequest(`/series/${numericId}/episodes/default/${tvdbLang}`);
+                                    translatedEpisodes = bulkResponse?.data?.episodes || null;
+                                    
+                                    if (translatedEpisodes && translatedEpisodes.length > 0) {
+                                        console.log(`✅ Got ${translatedEpisodes.length} translated episodes in bulk`);
+                                    } else if (tvdbLang !== 'eng') {
+                                        // Fallback to English if requested language not available
+                                        console.log(`⚠️ No ${tvdbLang} bulk translations, trying English fallback`);
+                                        const engResponse = await this.makeRequest(`/series/${numericId}/episodes/default/eng`);
+                                        translatedEpisodes = engResponse?.data?.episodes || null;
+                                        
+                                        if (translatedEpisodes && translatedEpisodes.length > 0) {
+                                            console.log(`🇬🇧 Got ${translatedEpisodes.length} English episodes in bulk fallback`);
+                                        }
+                                    }
+                                } catch (bulkError) {
+                                    console.log(`⚠️ Bulk episode translation failed: ${bulkError.message}`);
+                                    translatedEpisodes = null;
+                                }
+                                
+                                // Create a lookup map for translated episodes by episode ID
+                                const translationLookup = new Map();
+                                if (translatedEpisodes) {
+                                    translatedEpisodes.forEach(translatedEp => {
+                                        if (translatedEp.id) {
+                                            translationLookup.set(translatedEp.id, translatedEp);
+                                        }
                                     });
                                 }
+                                
+                                // Filter episodes to only include those from aired seasons and those that have aired
+                                const currentDate = new Date();
+                                const airedEpisodes = episodes.filter(episode => {
+                                    // Only include episodes that have actually aired
+                                    if (!episode.aired) {
+                                        return false; // Exclude episodes without air date
+                                    }
+                                    
+                                    const airDate = new Date(episode.aired);
+                                    if (airDate > currentDate) {
+                                        return false; // Exclude future episodes
+                                    }
+                                    
+                                    // Include episodes from season 0 (specials) and season 1+ that have aired
+                                    return episode.seasonNumber >= 0;
+                                });
+                                
+                                console.log(`📺 Filtered to ${airedEpisodes.length} aired episodes`);
+                                
+                                // Group episodes by season to determine which seasons actually have content
+                                const episodesBySeason = {};
+                                airedEpisodes.forEach(episode => {
+                                    if (!episodesBySeason[episode.seasonNumber]) {
+                                        episodesBySeason[episode.seasonNumber] = [];
+                                    }
+                                    episodesBySeason[episode.seasonNumber].push(episode);
+                                });
+                                
+                                // Update valid seasons to only include those with aired episodes
+                                const seasonsWithContent = validSeasons.filter(season => {
+                                    return episodesBySeason[season.number] && episodesBySeason[season.number].length > 0;
+                                });
+                                
+                                meta.seasons = seasonsWithContent.length;
+                                console.log(`📺 Final seasons with aired content: ${meta.seasons}`);
+                                
+                                // Build videos from actual episode data with bulk translations
+                                const videoMap = new Map();
+                                
+                                for (const episode of airedEpisodes) {
+                                    // Proper Stremio video ID format: "seriesId:season:episode"
+                                    const videoId = `${numericId}:${episode.seasonNumber}:${episode.number}`;
+                                    if (!videoMap.has(videoId)) {
+                                        // Start with original episode data
+                                        let episodeName = episode.name || `Episode ${episode.number}`;
+                                        let episodeOverview = episode.overview || `Season ${episode.seasonNumber}, Episode ${episode.number}`;
+                                        
+                                        // Special handling for Season 0 episodes (specials)
+                                        if (episode.seasonNumber === 0) {
+                                            episodeName = episode.name || `Special ${episode.number}`;
+                                            episodeOverview = episode.overview || `Special Episode ${episode.number}`;
+                                        }
+                                        
+                                        // Use bulk translation data if available
+                                        if (translationLookup.has(episode.id)) {
+                                            const translatedEp = translationLookup.get(episode.id);
+                                            if (translatedEp.name && translatedEp.name.trim()) {
+                                                episodeName = translatedEp.name;
+                                                console.log(`🎭 Bulk translated S${episode.seasonNumber}E${episode.number}: ${episodeName}`);
+                                            }
+                                            if (translatedEp.overview && translatedEp.overview.trim()) {
+                                                episodeOverview = translatedEp.overview;
+                                            }
+                                        }
+                                        
+                                        // Stremio SDK video object format (NO STREAMS - handled by stream handlers)
+                                        const video = {
+                                            id: videoId,
+                                            title: episodeName,
+                                            season: episode.seasonNumber,
+                                            episode: episode.number,
+                                            overview: episodeOverview,
+                                            thumbnail: episode.image || null,
+                                            released: episode.aired ? new Date(episode.aired).toISOString() : null
+                                        };
+                                        
+                                        // Episodes are metadata only - streams provided by separate stream handlers
+                                        videoMap.set(videoId, video);
+                                    }
+                                }
+                                
+                                meta.videos = Array.from(videoMap.values());
+                                console.log(`📺 Created ${meta.videos.length} video entries with bulk translations`);
+                            } else {
+                                // Fallback: Generate from season data
+                                const totalEpisodes = validSeasons.reduce((total, season) => {
+                                    return total + (season.episodeCount || season.episodes?.length || 0);
+                                }, 0);
+                                
+                                if (totalEpisodes > 0) {
+                                    meta.episodeCount = totalEpisodes;
+                                }
                             }
-                        });
-                        
-                        meta.videos = Array.from(videoMap.values());
+                        } catch (episodeError) {
+                            console.error('Error fetching episodes:', episodeError.message);
+                        }
 
-                        // Add behavior hints for series (following TMDB pattern)
+                        // Add behavior hints for series
                         meta.behaviorHints = {
                             defaultVideoId: null,
                             hasScheduledVideos: true
@@ -560,20 +883,21 @@ class TVDBService {
                     };
                 }
             } else {
-                // For movies, add behavior hints (following TMDB pattern)
+                // For movies, add behavior hints
                 meta.behaviorHints = {
-                    defaultVideoId: item.imdb_id || id,
+                    defaultVideoId: imdbId || id,
                     hasScheduledVideos: false
                 };
             }
 
-            // Clean up empty arrays to make response cleaner
+            // Clean up empty arrays
             Object.keys(meta).forEach(key => {
                 if (Array.isArray(meta[key]) && meta[key].length === 0) {
                     delete meta[key];
                 }
             });
 
+            console.log(`✅ Successfully transformed ${stremioType} metadata for: ${meta.name}`);
             return meta;
         } catch (error) {
             console.error('Error transforming detailed item to Stremio meta:', error);
@@ -582,132 +906,16 @@ class TVDBService {
     }
 
     /**
-     * Select preferred translation based on user language preference with proper fallbacks
-     * Priority: userLanguage -> English -> first available
-     * Mimics TMDB addon pattern for language handling
+     * Get extended information for series including seasons and other data
      */
-    selectPreferredTranslation(translations, fieldName, userLanguage = 'en-US') {
-        if (!translations || !Array.isArray(translations) || translations.length === 0) {
+    async getSeriesExtended(seriesId) {
+        try {
+            const response = await this.makeRequest(`/series/${seriesId}/extended`);
+            return response.data;
+        } catch (error) {
+            console.error(`Series extended error for ID ${seriesId}:`, error.message);
             return null;
         }
-
-        // Normalize user language (e.g., 'fr-FR' -> 'fr')
-        const userLangCode = userLanguage.toLowerCase().split('-')[0];
-        
-        // Debug: Log available languages
-        const availableLanguages = translations.map(t => t.language).join(', ');
-        console.log(`🌐 Available languages for ${fieldName}: ${availableLanguages}`);
-        console.log(`🔍 Looking for user language: ${userLanguage} (normalized: ${userLangCode})`);
-
-        // First priority: User's preferred language (exact match)
-        let userLangTranslation = translations.find(t => {
-            const langCode = t.language?.toLowerCase();
-            return langCode === userLanguage.toLowerCase();
-        });
-        
-        if (userLangTranslation && userLangTranslation[fieldName]) {
-            console.log(`✅ Found exact user language match: ${userLangTranslation.language}`);
-            return userLangTranslation[fieldName];
-        }
-
-        // Second priority: User's language (base code match - e.g., 'fr' for 'fr-FR')
-        userLangTranslation = translations.find(t => {
-            const langCode = t.language?.toLowerCase().split('-')[0];
-            return langCode === userLangCode;
-        });
-        
-        if (userLangTranslation && userLangTranslation[fieldName]) {
-            console.log(`✅ Found user language base match: ${userLangTranslation.language} for ${userLanguage}`);
-            return userLangTranslation[fieldName];
-        }
-
-        // Third priority: English (any variant)
-        const englishTranslation = translations.find(t => {
-            const langCode = t.language?.toLowerCase();
-            return langCode === 'eng' || langCode === 'en' || 
-                   langCode === 'en-us' || langCode === 'en-gb' ||
-                   langCode?.startsWith('en-');
-        });
-        
-        if (englishTranslation && englishTranslation[fieldName]) {
-            console.log(`🇬� Using English fallback: ${englishTranslation.language}`);
-            return englishTranslation[fieldName];
-        }
-
-        // Fourth priority: First available translation
-        const firstTranslation = translations[0];
-        if (firstTranslation && firstTranslation[fieldName]) {
-            console.log(`🔄 Using first available language (${firstTranslation.language})`);
-            return firstTranslation[fieldName];
-        }
-
-        console.log(`❌ No translation found for ${fieldName}`);
-        return null;
-    }
-
-    /**
-     * Select preferred translation from object format (used in search results)
-     * Priority: userLanguage -> English -> first available
-     */
-    selectPreferredTranslationFromObject(translationsObj, userLanguage = 'en-US') {
-        if (!translationsObj || typeof translationsObj !== 'object') {
-            return null;
-        }
-
-        const availableLanguages = Object.keys(translationsObj);
-        console.log(`🌐 Available languages: ${availableLanguages.join(', ')}`);
-        
-        const userLangCode = userLanguage.toLowerCase().split('-')[0];
-        console.log(`🔍 Looking for user language: ${userLanguage} (normalized: ${userLangCode})`);
-
-        // First priority: User's preferred language (exact match)
-        if (translationsObj[userLanguage]) {
-            console.log(`✅ Found exact user language match: ${userLanguage}`);
-            return translationsObj[userLanguage];
-        }
-
-        if (translationsObj[userLanguage.toLowerCase()]) {
-            console.log(`✅ Found user language match (lowercase): ${userLanguage.toLowerCase()}`);
-            return translationsObj[userLanguage.toLowerCase()];
-        }
-        
-        // Second priority: User's language base code
-        if (translationsObj[userLangCode]) {
-            console.log(`✅ Found user language base match: ${userLangCode}`);
-            return translationsObj[userLangCode];
-        }
-        
-        // Try common variations
-        const variations = [
-            userLanguage.toUpperCase(),
-            userLangCode.toUpperCase(),
-            `${userLangCode}-${userLangCode.toUpperCase()}`,
-        ];
-        
-        for (const variation of variations) {
-            if (translationsObj[variation]) {
-                console.log(`✅ Found user language variation: ${variation} for ${userLanguage}`);
-                return translationsObj[variation];
-            }
-        }
-
-        // Third priority: English (any variant)
-        const englishKeys = ['eng', 'en', 'en-us', 'en-gb', 'EN', 'ENG', 'en-US', 'en-GB'];
-        for (const key of englishKeys) {
-            if (translationsObj[key]) {
-                console.log(`🇬🇧 Using English fallback: ${key}`);
-                return translationsObj[key];
-            }
-        }
-
-        // Fourth priority: First available translation
-        const firstKey = availableLanguages[0];
-        if (firstKey && translationsObj[firstKey]) {
-            console.log(`🔄 Using first available language (${firstKey})`);
-            return translationsObj[firstKey];
-        }
-
-        return null;
     }
 }
 
