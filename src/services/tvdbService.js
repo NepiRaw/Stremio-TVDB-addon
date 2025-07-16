@@ -994,34 +994,26 @@ class TVDBService {
                             console.error('Error fetching episodes:', episodeError.message);
                         }
 
-                        // Add behavior hints for series with IMDB ID support
-                        // Set default to first available episode (usually S1E1)
-                        let defaultVideoId = null;
-                        if (meta.videos && meta.videos.length > 0) {
-                            // Find the first episode of the first season (excluding specials if possible)
-                            const regularEpisodes = meta.videos.filter(v => v.season > 0);
-                            const firstEpisode = regularEpisodes.length > 0 ? regularEpisodes[0] : meta.videos[0];
-                            defaultVideoId = firstEpisode.id;
-                        }
-                        
+                        // Add behavior hints for series - NO default episode selection
+                        // Users must explicitly choose an episode before stream requests are made
                         meta.behaviorHints = {
-                            defaultVideoId: defaultVideoId,
+                            defaultVideoId: null,  // No auto-selection of episodes
                             hasScheduledVideos: true
                         };
                     }
                 }
 
-                // If no seasons data, still set proper defaults with IMDB ID support
+                // If no seasons data, still set proper defaults - NO default episode selection
                 if (meta.seasons === 0) {
                     meta.behaviorHints = {
-                        defaultVideoId: imdbId || null,
+                        defaultVideoId: null,  // No auto-selection
                         hasScheduledVideos: false
                     };
                 }
             } else {
-                // For movies, add behavior hints
+                // For movies, no auto-selection - user must explicitly choose to play
                 meta.behaviorHints = {
-                    defaultVideoId: imdbId || id,
+                    defaultVideoId: null,  // No auto-selection for movies either
                     hasScheduledVideos: false
                 };
             }
