@@ -143,12 +143,11 @@ class MetadataTransformer {
      * Add basic metadata (year, genres, cast, etc.)
      */
     addBasicMetadata(meta, item) {
-        // Year
-        if (item.year) {
-            meta.year = parseInt(item.year);
-        } else if (item.firstAired) {
-            meta.year = new Date(item.firstAired).getFullYear();
-        }
+        // Enhanced year with date range for series
+        this.addEnhancedYear(meta, item);
+        
+        // Runtime information
+        this.addEnhancedRuntime(meta, item);
 
         // Genres
         if (Array.isArray(item.genres)) {
@@ -165,13 +164,6 @@ class MetadataTransformer {
             meta.country = [item.country];
         }
 
-        // Runtime
-        if (item.runtime) {
-            meta.runtime = `${item.runtime} min`;
-        } else if (item.averageRuntime) {
-            meta.runtime = `${item.averageRuntime} min`;
-        }
-
         // Language
         if (item.originalLanguage) {
             meta.language = item.originalLanguage;
@@ -182,6 +174,83 @@ class MetadataTransformer {
             meta.network = item.originalNetwork.name;
         } else if (item.latestNetwork?.name) {
             meta.network = item.latestNetwork.name;
+        }
+    }
+
+    /**
+     * Add enhanced year with date range for series
+     */
+    addEnhancedYear(meta, item) {
+        const startYear = item.firstAired ? new Date(item.firstAired).getFullYear() : 
+                         item.year ? parseInt(item.year) : null;
+        
+        // For series, show date range based on status
+        if (meta.type === 'series' && startYear) {
+            const lastAiredDate = item.lastAired ? new Date(item.lastAired) : null;
+            const endYear = lastAiredDate ? lastAiredDate.getFullYear() : null;
+            
+            // Extract status to determine format
+            const status = this.extractValidStatus(item.status);
+            
+            if (status === 'ended' && endYear && endYear !== startYear) {
+                // Ended series: show full range "2008-2013"
+                meta.year = `${startYear}-${endYear}`;
+                console.log(`📅 Series date range: ${meta.year}`);
+            } else if (status === 'ended') {
+                // Series ended in same year it started
+                meta.year = startYear;
+                console.log(`📅 Series year: ${meta.year}`);
+            } else if (status === 'continuing') {
+                // Ongoing series: show with dash "2016-"
+                meta.year = `${startYear}-`;
+                console.log(`📅 Ongoing series: ${meta.year}`);
+            } else {
+                // Unknown status: use date-based logic
+                if (endYear && endYear !== startYear) {
+                    meta.year = `${startYear}-${endYear}`;
+                } else {
+                    meta.year = startYear;
+                }
+                console.log(`📅 Series year (unknown status): ${meta.year}`);
+            }
+        } else {
+            // For movies, use simple year
+            meta.year = startYear;
+        }
+    }
+
+    /**
+     * Extract and validate TVDB status for date range logic
+     */
+    extractValidStatus(statusData) {
+        if (!statusData) return null;
+        
+        let statusName = null;
+        
+        // Extract status name from object or string
+        if (typeof statusData === 'object' && statusData.name) {
+            statusName = statusData.name;
+        } else if (typeof statusData === 'string') {
+            statusName = statusData;
+        } else {
+            return null;
+        }
+        
+        // Normalize and validate against known TVDB statuses
+        const normalizedStatus = statusName.toLowerCase().trim();
+        const validStatuses = ['ended', 'continuing'];
+        
+        return validStatuses.includes(normalizedStatus) ? normalizedStatus : null;
+    }
+
+    /**
+     * Add runtime information
+     */
+    addEnhancedRuntime(meta, item) {
+        if (item.runtime) {
+            meta.runtime = `${item.runtime} min`;
+        } else if (item.averageRuntime) {
+            meta.runtime = `${item.averageRuntime} min`;
         }
     }
 
