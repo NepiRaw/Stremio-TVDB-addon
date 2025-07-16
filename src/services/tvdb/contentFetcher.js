@@ -13,10 +13,13 @@ class ContentFetcher {
      */
     async getContentDetails(contentType, contentId) {
         try {
+            // Extract numeric ID from prefixed format (e.g., "movie-15778" -> "15778")
+            const numericId = this.extractNumericId(contentId);
             const endpoint = contentType === 'movie' ? 'movies' : 'series';
+            
             const [basic, extended] = await Promise.all([
-                this.apiClient.makeRequest(`/${endpoint}/${contentId}`),
-                this.apiClient.makeRequest(`/${endpoint}/${contentId}/extended`).catch(() => null)
+                this.apiClient.makeRequest(`/${endpoint}/${numericId}`),
+                this.apiClient.makeRequest(`/${endpoint}/${numericId}/extended`).catch(() => null)
             ]);
             
             return extended?.data || basic.data;
@@ -24,6 +27,18 @@ class ContentFetcher {
             console.error(`${contentType} details error for ID ${contentId}:`, error.message);
             return null;
         }
+    }
+
+    /**
+     * Extract numeric ID from TVDB ID format
+     */
+    extractNumericId(id) {
+        if (typeof id === 'string') {
+            // Handle formats like "movie-15778", "series-81189", or just "15778"
+            const match = id.match(/(\d+)$/);
+            return match ? match[1] : id;
+        }
+        return id;
     }
 
     /**

@@ -155,13 +155,8 @@ class MetadataTransformer {
             meta.genres = item.genres.map(genre => genre.name || genre).filter(Boolean);
         }
 
-        // Cast
-        if (Array.isArray(item.characters)) {
-            meta.cast = item.characters
-                .filter(c => c.people?.name || c.personName)
-                .map(c => c.people?.name || c.personName)
-                .slice(0, 15);
-        }
+        // Cast - with genre-based filtering
+        this.addCastWithGenreFiltering(meta, item);
 
         // Country
         if (item.originalCountry) {
@@ -188,6 +183,69 @@ class MetadataTransformer {
         } else if (item.latestNetwork?.name) {
             meta.network = item.latestNetwork.name;
         }
+    }
+
+    /**
+     * Add cast with genre-based filtering
+     */
+    addCastWithGenreFiltering(meta, item) {
+        if (!Array.isArray(item.characters) || item.characters.length === 0) {
+            return;
+        }
+
+        // Check if content is anime/animation
+        const isAnimatedContent = this.isAnimatedContent(meta.genres || []);
+        
+        if (isAnimatedContent) {
+            // Skip cast for anime/animation content
+            console.log(`🎭 Skipping cast for animated content: ${meta.name}`);
+            return;
+        }
+
+        // Filter valid actors and sort by importance
+        const validActors = item.characters
+            .filter(c => c.people?.name || c.personName)
+            .sort((a, b) => {
+                // Primary: Featured actors first
+                const aFeatured = a.isFeatured ? 0 : 1;
+                const bFeatured = b.isFeatured ? 0 : 1;
+                if (aFeatured !== bFeatured) return aFeatured - bFeatured;
+                
+                // Secondary: Sort by sort order (lower number = more important)
+                const aSort = a.sort !== undefined ? a.sort : 999;
+                const bSort = b.sort !== undefined ? b.sort : 999;
+                return aSort - bSort;
+            });
+
+        // Take top 5 most important actors
+        const topActors = validActors
+            .slice(0, 5)
+            .map(c => c.people?.name || c.personName);
+
+        if (topActors.length > 0) {
+            meta.cast = topActors;
+            console.log(`🎭 Added ${topActors.length} cast members (sorted by importance): ${topActors.join(', ')}`);
+        }
+    }
+
+    /**
+     * Check if content is animated (anime/animation)
+     */
+    isAnimatedContent(genres) {
+        if (!Array.isArray(genres)) return false;
+        
+        const animatedGenres = [
+            'anime', 'animation', 'animated', 'cartoon', 'アニメ'
+        ];
+        
+        return genres.some(genre => {
+            if (typeof genre !== 'string') return false;
+            
+            const genreLower = genre.toLowerCase().trim();
+            return animatedGenres.some(animatedGenre => 
+                genreLower.includes(animatedGenre)
+            );
+        });
     }
 
     /**
