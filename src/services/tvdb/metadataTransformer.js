@@ -113,9 +113,14 @@ class MetadataTransformer {
             console.log(`✅ Got high-res background from artwork API`);
         }
         
+        if (artwork.logo) {
+            meta.logo = artwork.logo;
+            console.log(`🏷️ Got clearlogo from artwork API`);
+        }
+        
         // Apply fallbacks if no high-res artwork
-        if (!meta.poster || !meta.background) {
-            const { posterSources, backgroundSources } = this.artworkHandler.getArtworkFallbacks(item, stremioType);
+        if (!meta.poster || !meta.background || !meta.logo) {
+            const { posterSources, backgroundSources, logoSources } = this.artworkHandler.getArtworkFallbacks(item, stremioType, tvdbLanguage);
             
             if (!meta.poster && posterSources.length > 0) {
                 meta.poster = posterSources[0];
@@ -125,6 +130,11 @@ class MetadataTransformer {
             if (!meta.background && backgroundSources.length > 0) {
                 meta.background = backgroundSources[0];
                 console.log(`🔄 Using fallback background`);
+            }
+            
+            if (!meta.logo && logoSources.length > 0) {
+                meta.logo = logoSources[0];
+                console.log(`🔄 Using fallback logo`);
             }
         }
     }

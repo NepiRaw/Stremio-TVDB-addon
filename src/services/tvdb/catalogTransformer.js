@@ -23,9 +23,12 @@ class CatalogTransformer {
         });
 
         // Step 2: Transform to Stremio format
-        const transformedResults = basicFiltered
-            .map(item => this.transformSearchItemToStremioMeta(item, userLanguage))
-            .filter(Boolean);
+        const transformedResults = [];
+        
+        for (const item of basicFiltered) {
+            const meta = await this.transformSearchItemToStremioMeta(item, userLanguage);
+            if (meta) transformedResults.push(meta);
+        }
 
         // Step 3: Apply IMDB filtering for stream compatibility
         const imdbFilteredResults = [];
@@ -52,7 +55,7 @@ class CatalogTransformer {
     /**
      * Transform search item to Stremio meta format
      */
-    transformSearchItemToStremioMeta(item, userLanguage = null) {
+    async transformSearchItemToStremioMeta(item, userLanguage = null) {
         try {
             const stremioType = item.type === 'movie' ? 'movie' : 'series';
             const numericId = this.extractNumericId(item.id);
@@ -82,13 +85,33 @@ class CatalogTransformer {
                 name: selectedName
             };
 
-            // Add poster with fallbacks
-            const posterSources = [
-                item.image_url, item.poster, item.image, item.thumbnail
-            ].filter(Boolean);
-            
-            if (posterSources.length > 0) {
-                meta.poster = posterSources[0];
+            // Get enhanced artwork including clearlogo for series
+            if (stremioType === 'series') {
+                try {
+                    const artwork = await this.artworkHandler.getArtwork('series', numericId, userLanguage);
+                    
+                    if (artwork.poster) {
+                        meta.poster = artwork.poster;
+                    }
+                    
+                    if (artwork.logo) {
+                        meta.logo = artwork.logo;
+                        console.log(`🏷️ Added clearlogo to catalog item: ${selectedName}`);
+                    }
+                } catch (error) {
+                    console.log(`🎨 Artwork error for ${selectedName}: ${error.message}`);
+                }
+            }
+
+            // Add poster fallbacks if not already set
+            if (!meta.poster) {
+                const posterSources = [
+                    item.image_url, item.poster, item.image, item.thumbnail
+                ].filter(Boolean);
+                
+                if (posterSources.length > 0) {
+                    meta.poster = posterSources[0];
+                }
             }
 
             // Add year
