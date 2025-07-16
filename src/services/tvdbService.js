@@ -1062,25 +1062,26 @@ class TVDBService {
                     };
                 }
             } else {
-                // MOVIES: Need videos array with single video object for stream addon compatibility
-                // According to Stremio SDK: "If you do not provide videos (e.g. for movie), 
-                // Stremio assumes this meta item has one video, and it's ID is equal to the meta item id"
-                // However, stream addons work better with explicit videos array
+                // MOVIES: According to Stremio SDK and confirmed by Trakt addon analysis:
+                // Movies should NOT have a videos array - they use the Meta ID directly for streaming
+                // Trakt pattern: meta.behaviorHints = { defaultVideoId: meta.id }
                 
-                const movieVideoId = imdbId || id; // Use IMDB ID if available, otherwise TVDB ID
+                console.log(`🎬 Movie processing complete: ${meta.name} (${meta.id})`);
                 
-                meta.videos = [{
-                    id: movieVideoId,
-                    title: meta.name,
-                    released: item.year ? `${item.year}-01-01T00:00:00.000Z` : null
-                }];
+                // CRITICAL FIX: Remove any videos array from movies
+                // Movies must use Meta ID directly for stream requests
+                if (meta.videos) {
+                    delete meta.videos;
+                    console.log('🚫 Removed videos array from movie (Stremio movies use Meta ID directly)');
+                }
                 
-                console.log(`🎬 Created movie video object with ID: ${movieVideoId}`);
-                
-                // Movies don't need complex behavior hints
+                // Set proper behavior hints for movies following Trakt pattern
                 meta.behaviorHints = {
+                    defaultVideoId: imdbId || meta.id,  // Use IMDB ID if available, fallback to TVDB ID
                     hasScheduledVideos: false
                 };
+                
+                console.log(`🎯 Movie behavior: defaultVideoId=${meta.behaviorHints.defaultVideoId}, streams via Meta ID`);
             }
 
             // Clean up empty arrays
