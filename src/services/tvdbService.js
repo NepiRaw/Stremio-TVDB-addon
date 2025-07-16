@@ -404,9 +404,11 @@ class TVDBService {
     /**
      * Transform TVDB search results to Stremio catalog format
      * Uses the rich translation data available in search results
+     * CRITICAL: Applies IMDB filtering at catalog level for stream compatibility
      */
     async transformSearchResults(results, type, userLanguage = null) {
-        return results
+        // Step 1: Basic filtering and transformation
+        const basicFiltered = results
             .filter(item => {
                 // Filter by type if specified
                 if (type === 'movie' && item.type !== 'movie') return false;
@@ -414,9 +416,45 @@ class TVDBService {
                 
                 // Basic validation
                 return item.id && item.name;
-            })
+            });
+
+        // Step 2: Transform to Stremio format first
+        const transformedResults = basicFiltered
             .map(item => this.transformSearchItemToStremioMeta(item, userLanguage))
-            .filter(Boolean); // Remove any null results
+            .filter(Boolean);
+
+        // Step 3: CRITICAL - Apply IMDB filtering for stream compatibility
+        // Fetch detailed data to check IMDB IDs for each result
+        const imdbFilteredResults = [];
+        
+        for (const meta of transformedResults) {
+            try {
+                // Extract numeric ID from meta.id (e.g., "tvdb-293088" -> "293088")
+                const numericId = meta.id.replace('tvdb-', '');
+                
+                // Fetch detailed data to check IMDB ID
+                let detailedData = null;
+                if (meta.type === 'movie') {
+                    detailedData = await this.getMovieDetails(numericId);
+                } else {
+                    detailedData = await this.getSeriesDetails(numericId);
+                }
+                
+                // Check if it has IMDB ID using our validation
+                if (detailedData && validateImdbRequirement(detailedData, meta.type)) {
+                    imdbFilteredResults.push(meta);
+                    console.log(`✅ "${meta.name}" - Has IMDB ID, included in catalog`);
+                } else {
+                    console.log(`🚫 "${meta.name}" - No IMDB ID, excluded from catalog (stream compatibility)`);
+                }
+            } catch (error) {
+                console.log(`❌ "${meta.name}" - Error checking IMDB: ${error.message}, excluded`);
+            }
+        }
+        
+        console.log(`🎬 IMDB catalog filtering: ${transformedResults.length} → ${imdbFilteredResults.length} results (${transformedResults.length - imdbFilteredResults.length} excluded without IMDB IDs)`);
+        
+        return imdbFilteredResults;
     }
 
     /**
