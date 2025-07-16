@@ -9,7 +9,7 @@ class ContentFetcher {
     }
 
     /**
-     * Get detailed content information (unified for movies/series)
+     * Get detailed content information (unified for movies/series) with enhanced error handling
      */
     async getContentDetails(contentType, contentId) {
         try {
@@ -17,12 +17,17 @@ class ContentFetcher {
             const numericId = this.extractNumericId(contentId);
             const endpoint = contentType === 'movie' ? 'movies' : 'series';
             
-            const [basic, extended] = await Promise.all([
+            // Use Promise.allSettled to handle failures gracefully
+            const [basicResult, extendedResult] = await Promise.allSettled([
                 this.apiClient.makeRequest(`/${endpoint}/${numericId}`),
-                this.apiClient.makeRequest(`/${endpoint}/${numericId}/extended`).catch(() => null)
+                this.apiClient.makeRequest(`/${endpoint}/${numericId}/extended`)
             ]);
             
-            return extended?.data || basic.data;
+            // Extract data from successful requests
+            const basic = basicResult.status === 'fulfilled' ? basicResult.value : null;
+            const extended = extendedResult.status === 'fulfilled' ? extendedResult.value : null;
+            
+            return extended?.data || basic?.data || null;
         } catch (error) {
             console.error(`${contentType} details error for ID ${contentId}:`, error.message);
             return null;

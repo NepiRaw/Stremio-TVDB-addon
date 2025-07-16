@@ -1,13 +1,10 @@
 /**
  * TVDB Catalog Transformer
- * Transforms search results to Stremio catalog format with IM                    if (artwork?.logo) {
-                        meta.logo = artwork.logo;
-                    }
-                } catch (error) {
-                    // Artwork errors are non-fatal, continue without artworktering
+ * Transforms search results to Stremio catalog format with IMDB filtering
  */
 
 const { validateImdbRequirement } = require('../../utils/imdbFilter');
+const cacheService = require('../cacheService');
 
 class CatalogTransformer {
     constructor(contentFetcher, translationService, artworkHandler) {
@@ -17,7 +14,7 @@ class CatalogTransformer {
     }
 
     /**
-     * Transform search results to catalog format with IMDB filtering
+     * Transform search results to catalog format with parallel IMDB filtering
      */
     async transformSearchResults(results, type, userLanguage = null) {
         // Step 1: Basic filtering and transformation
@@ -27,33 +24,83 @@ class CatalogTransformer {
             return item.id && item.name;
         });
 
-        // Step 2: Transform to Stremio format
-        const transformedResults = [];
-        
-        for (const item of basicFiltered) {
-            const meta = await this.transformSearchItemToStremioMeta(item, userLanguage);
-            if (meta) transformedResults.push(meta);
+        if (basicFiltered.length === 0) {
+            return [];
         }
 
-        // Step 3: Apply IMDB filtering for stream compatibility
-        const imdbFilteredResults = [];
+        // Step 2: Transform to Stremio format in parallel
+        const transformPromises = basicFiltered.map(item => 
+            this.transformSearchItemToStremioMeta(item, userLanguage)
+        );
         
-        for (const meta of transformedResults) {
-            try {
-                const numericId = meta.id.replace('tvdb-', '');
-                const detailedData = await this.contentFetcher.getContentDetails(meta.type, numericId);
-                
-                if (detailedData && validateImdbRequirement(detailedData, meta.type)) {
-                    imdbFilteredResults.push(meta);
-                } else {
-                    console.log(`🚫 "${meta.name}" - No IMDB ID, excluded from catalog`);
-                }                } catch (error) {
-                    // Skip items that fail validation instead of logging
-            }
+        const transformedResults = (await Promise.allSettled(transformPromises))
+            .filter(result => result.status === 'fulfilled' && result.value)
+            .map(result => result.value);
+
+        if (transformedResults.length === 0) {
+            return [];
         }
+
+        // Step 3: Apply IMDB filtering with chunked parallel processing
+        const imdbFilteredResults = await this.processIMDBValidationInChunks(transformedResults);
         
         console.log(`🎬 IMDB catalog filtering: ${transformedResults.length} → ${imdbFilteredResults.length} results`);
         return imdbFilteredResults;
+    }
+
+    /**
+     * Process IMDB validation in chunks with caching to control API load
+     */
+    async processIMDBValidationInChunks(transformedResults, chunkSize = 8) {
+        const results = [];
+        
+        // Process in chunks to avoid overwhelming the API
+        for (let i = 0; i < transformedResults.length; i += chunkSize) {
+            const chunk = transformedResults.slice(i, i + chunkSize);
+            
+            const chunkPromises = chunk.map(async (meta) => {
+                try {
+                    const numericId = meta.id.replace('tvdb-', '');
+                    
+                    // Check cache first
+                    const cachedValidation = cacheService.getImdbValidation(meta.type, numericId);
+                    if (cachedValidation !== null) {
+                        if (cachedValidation.isValid) {
+                            return meta;
+                        } else {
+                            console.log(`💾 "${meta.name}" - Cached as invalid, excluded from catalog`);
+                            return null;
+                        }
+                    }
+                    
+                    // Not in cache, fetch from API
+                    const detailedData = await this.contentFetcher.getContentDetails(meta.type, numericId);
+                    const isValid = detailedData && validateImdbRequirement(detailedData, meta.type);
+                    
+                    // Cache the result
+                    cacheService.setImdbValidation(meta.type, numericId, isValid, detailedData);
+                    
+                    if (isValid) {
+                        return meta;
+                    } else {
+                        console.log(`🚫 "${meta.name}" - No IMDB ID, excluded from catalog`);
+                        return null;
+                    }
+                } catch (error) {
+                    // Skip items that fail validation
+                    return null;
+                }
+            });
+
+            const chunkResults = await Promise.allSettled(chunkPromises);
+            const validChunkResults = chunkResults
+                .filter(result => result.status === 'fulfilled' && result.value)
+                .map(result => result.value);
+            
+            results.push(...validChunkResults);
+        }
+        
+        return results;
     }
 
     /**

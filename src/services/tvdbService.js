@@ -1,14 +1,10 @@
-/**
- * TVDB API Service - Refactored Core
- * Clean, modular service with delegated responsibilities
- */
-
 const axios = require('axios');
 const ContentFetcher = require('./tvdb/contentFetcher');
 const TranslationService = require('./tvdb/translationService');
 const ArtworkHandler = require('./tvdb/artworkHandler');
 const CatalogTransformer = require('./tvdb/catalogTransformer');
 const MetadataTransformer = require('./tvdb/metadataTransformer');
+const cacheService = require('./cacheService');
 const { getEnhancedReleaseInfo } = require('../utils/theatricalStatus');
 
 class TVDBService {
@@ -102,9 +98,15 @@ class TVDBService {
     }
 
     /**
-     * Search for content in TVDB
+     * Search for content in TVDB with enhanced performance and caching
      */
-    async search(query, type = null, limit = 20) {
+    async search(query, type = null, limit = 20, userLanguage = 'eng') {
+        // Check cache first
+        const cachedResults = cacheService.getSearchResults(query, type || 'all', userLanguage);
+        if (cachedResults) {
+            return cachedResults;
+        }
+
         const params = {
             query: query.trim(),
             limit
@@ -116,11 +118,51 @@ class TVDBService {
 
         try {
             const response = await this.makeRequest('/search', params);
-            return response.data || [];
+            const results = response.data || [];
+            
+            // Cache the results
+            cacheService.setSearchResults(query, type || 'all', userLanguage, results);
+            
+            return results;
         } catch (error) {
             console.error('Search error:', error.message);
             return [];
         }
+    }
+
+    /**
+     * Search both movies and series in parallel for unified results with caching
+     */
+    async searchBoth(query, limit = 20, userLanguage = 'eng') {
+        try {
+            const [movieResults, seriesResults] = await Promise.all([
+                this.search(query, 'movie', limit, userLanguage),
+                this.search(query, 'series', limit, userLanguage)
+            ]);
+
+            return {
+                movies: movieResults,
+                series: seriesResults,
+                total: movieResults.length + seriesResults.length
+            };
+        } catch (error) {
+            console.error('Parallel search error:', error.message);
+            return { movies: [], series: [], total: 0 };
+        }
+    }
+
+    /**
+     * Clear all caches (for testing and debugging)
+     */
+    clearCache() {
+        cacheService.clearAll();
+    }
+
+    /**
+     * Get cache statistics
+     */
+    getCacheStats() {
+        return cacheService.getStats();
     }
 
     // Delegated methods for backward compatibility and clean API

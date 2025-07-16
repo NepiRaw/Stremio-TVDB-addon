@@ -24,6 +24,8 @@ function getLanguagePreference(req) {
  * Route: /catalog/:type/:id/:extra?.json
  */
 async function catalogHandler(req, res) {
+    const startTime = Date.now();
+    
     try {
         const { type, id, extra } = req.params;
         
@@ -55,16 +57,29 @@ async function catalogHandler(req, res) {
 
         console.log(`🔍 Searching ${type} for: "${extraParams.search}" (language: ${userLanguage})`);
 
-        // Search TVDB
-        const searchResults = await tvdbService.search(extraParams.search, type);
+        const searchStart = Date.now();
+        
+        // Search TVDB with language for caching
+        const searchResults = await tvdbService.search(extraParams.search, type, 20, userLanguage);
+        
+        const searchTime = Date.now() - searchStart;
+        console.log(`⚡ Search API call completed in ${searchTime}ms`);
+        
+        const transformStart = Date.now();
         
         // Transform results to Stremio format with user language preference
         const metas = await tvdbService.transformSearchResults(searchResults, type, userLanguage);
 
+        const transformTime = Date.now() - transformStart;
+        const totalTime = Date.now() - startTime;
+        
+        console.log(`⚡ Transform completed in ${transformTime}ms (Total: ${totalTime}ms, Results: ${metas.length})`);
+
         res.json({ metas });
 
     } catch (error) {
-        console.error('Catalog handler error:', error);
+        const totalTime = Date.now() - startTime;
+        console.error(`Catalog handler error after ${totalTime}ms:`, error);
         // Return empty results on error to avoid breaking Stremio
         res.json({ metas: [] });
     }
