@@ -422,9 +422,9 @@ class MetadataTransformer {
             translations.primary, translations.fallback
         );
 
-        // Filter and process episodes
+        // Filter and process episodes (includes aired + future episodes for Stremio's upcoming feature)
         const airedEpisodes = this.contentFetcher.filterAiredEpisodes(episodes);
-        console.log(`📺 Filtered to ${airedEpisodes.length} aired episodes`);
+        console.log(`📺 Filtered to ${airedEpisodes.length} episodes (aired + upcoming)`);
 
         const episodesBySeason = this.contentFetcher.groupEpisodesBySeason(airedEpisodes);
         const seasonsWithContent = validSeasons.filter(season => 

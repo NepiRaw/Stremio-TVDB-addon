@@ -152,16 +152,19 @@ class ContentFetcher {
     }
 
     /**
-     * Filter aired episodes
+     * Filter episodes with valid air dates (including aired + future episodes for Stremio's upcoming feature)
      */
     filterAiredEpisodes(episodes) {
-        const currentDate = new Date();
         return episodes.filter(episode => {
+            // Must have an air date to be valid
             if (!episode.aired) return false;
             
+            // Include all episodes with valid dates (past AND future)
+            // Stremio will automatically show future episodes as "upcoming" with hourglass icon
             const airDate = new Date(episode.aired);
-            if (airDate > currentDate) return false;
+            if (isNaN(airDate.getTime())) return false;
             
+            // Only filter out specials with negative season numbers
             return episode.seasonNumber >= 0;
         });
     }
