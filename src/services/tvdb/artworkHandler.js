@@ -19,11 +19,16 @@ class ArtworkHandler {
             }
             
             // Series use dedicated artwork endpoint
-            const response = await this.apiClient.makeRequest(`/series/${entityId}/artworks`, {
-                lang: language
-            });
+            // Fetch ALL artworks (no language filter) to get best backgrounds
+            // Language filtering will be applied later for posters and clearlogos only
+            const response = await this.apiClient.makeRequest(`/series/${entityId}/artworks`);
             
             const artworks = response?.data?.artworks || [];
+            
+            if (artworks.length === 0) {
+                return { poster: null, background: null, logo: null };
+            }
+            
             const result = this.selectOptimalArtwork(artworks, language);
             
             // Add clearlogo selection  
@@ -31,7 +36,7 @@ class ArtworkHandler {
             
             return result;
         } catch (error) {
-            console.error(`Artwork fetch error for ${entityType} ${entityId}:`, error.message);
+            console.error(`❌ Artwork fetch error for ${entityType} ${entityId}:`, error.message);
             return { poster: null, background: null, logo: null };
         }
     }
@@ -68,55 +73,52 @@ class ArtworkHandler {
      * Fallback: poster (pref lang) -> poster (eng) -> poster (any) -> null
      */
     selectBestPoster(posters, preferredLanguage = 'eng') {
-        if (posters.length === 0) return null;
+        if (posters.length === 0) {
+            return null;
+        }
         
         // Step 1: Try preferred language
         const preferredLangPosters = posters.filter(art => art.language === preferredLanguage);
         if (preferredLangPosters.length > 0) {
-            const best = this.selectBestFromArray(preferredLangPosters);
-            console.log(`🎨 Selected poster (${preferredLanguage}): ${best.width}x${best.height} (score: ${best.score})`);
-            return best.image;
+            return this.selectBestFromArray(preferredLangPosters).image;
         }
         
         // Step 2: Try English if preferred wasn't English
         if (preferredLanguage !== 'eng') {
             const englishPosters = posters.filter(art => art.language === 'eng');
             if (englishPosters.length > 0) {
-                const best = this.selectBestFromArray(englishPosters);
-                console.log(`🎨 Selected poster (eng fallback): ${best.width}x${best.height} (score: ${best.score})`);
-                return best.image;
+                return this.selectBestFromArray(englishPosters).image;
             }
         }
         
         // Step 3: Try any language available (highest score/resolution)
-        const best = this.selectBestFromArray(posters);
-        console.log(`🎨 Selected poster (any lang): ${best.width}x${best.height} (lang: ${best.language || 'unknown'}, score: ${best.score})`);
-        return best.image;
+        return this.selectBestFromArray(posters).image;
     }
 
     /**
-     * Select best background prioritizing landscape ratio and resolution
+     * Select best background prioritizing score first (no language fallback needed)
      */
     selectBestBackground(backgrounds) {
         if (backgrounds.length === 0) return null;
         
+        // Sort by score first (highest priority), then good aspect ratio, then resolution
         const bestBackground = backgrounds.sort((a, b) => {
-            const aResolution = (a.width || 0) * (a.height || 0);
-            const bResolution = (b.width || 0) * (b.height || 0);
-            if (aResolution !== bResolution) return bResolution - aResolution;
+            // 1. Score is most important (language-agnostic)
+            if ((b.score || 0) !== (a.score || 0)) return (b.score || 0) - (a.score || 0);
             
+            // 2. Then prefer good landscape aspect ratio
             const aAspectRatio = a.width && a.height ? a.width / a.height : 0;
             const bAspectRatio = b.width && b.height ? b.width / b.height : 0;
             const aIsGoodRatio = aAspectRatio >= 1.5 && aAspectRatio <= 2.5;
             const bIsGoodRatio = bAspectRatio >= 1.5 && bAspectRatio <= 2.5;
             if (aIsGoodRatio !== bIsGoodRatio) return bIsGoodRatio ? 1 : -1;
             
-            return (b.score || 0) - (a.score || 0);
+            // 3. Finally by resolution
+            const aResolution = (a.width || 0) * (a.height || 0);
+            const bResolution = (b.width || 0) * (b.height || 0);
+            return bResolution - aResolution;
         })[0];
         
-        const ratio = bestBackground.width && bestBackground.height ? 
-            (bestBackground.width/bestBackground.height).toFixed(2) : 'unknown';
-        console.log(`🎨 Selected background: ${bestBackground.width}x${bestBackground.height} (ratio: ${ratio}, score: ${bestBackground.score})`);
         return bestBackground.image;
     }
 
@@ -133,32 +135,25 @@ class ArtworkHandler {
         );
         
         if (clearlogos.length === 0) {
-            console.log(`🏷️ No clearlogos found - will use plain text title`);
             return null;
         }
         
         // Step 1: Try preferred language
         const preferredLangLogos = clearlogos.filter(art => art.language === preferredLanguage);
         if (preferredLangLogos.length > 0) {
-            const best = this.selectBestFromArray(preferredLangLogos);
-            console.log(`🏷️ Selected clearlogo (${preferredLanguage}): ${best.width}x${best.height} (score: ${best.score})`);
-            return best.image;
+            return this.selectBestFromArray(preferredLangLogos).image;
         }
         
         // Step 2: Try English if preferred wasn't English
         if (preferredLanguage !== 'eng') {
             const englishLogos = clearlogos.filter(art => art.language === 'eng');
             if (englishLogos.length > 0) {
-                const best = this.selectBestFromArray(englishLogos);
-                console.log(`🏷️ Selected clearlogo (eng fallback): ${best.width}x${best.height} (score: ${best.score})`);
-                return best.image;
+                return this.selectBestFromArray(englishLogos).image;
             }
         }
         
         // Step 3: Try any language available
-        const best = this.selectBestFromArray(clearlogos);
-        console.log(`🏷️ Selected clearlogo (any lang): ${best.width}x${best.height} (lang: ${best.language || 'unknown'}, score: ${best.score})`);
-        return best.image;
+        return this.selectBestFromArray(clearlogos).image;
     }
 
     /**

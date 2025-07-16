@@ -215,7 +215,6 @@ function validateImdbRequirement(item, itemType = 'content') {
     }
     
     const imdbId = extractImdbId(item);
-    console.log(`✅ ${itemType} "${item.name}" has IMDB ID: ${imdbId} and poster artwork`);
     return true;
 }
 

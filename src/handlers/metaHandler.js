@@ -44,8 +44,6 @@ async function metaHandler(req, res) {
 
         // Extract user's preferred language
         const userLanguage = getLanguagePreference(req);
-        
-        console.log(`📋 Getting metadata for ${type} ID: ${tvdbId} (language: ${userLanguage})`);
 
         let detailedData = null;
         let seasonsData = null;
@@ -69,13 +67,6 @@ async function metaHandler(req, res) {
             }
             
             seasonsData = seasons;
-            
-            // Log season data for debugging
-            if (seasons && seasons.length > 0) {
-                console.log(`📺 Found ${seasons.length} seasons for series ${tvdbId}`);
-            } else {
-                console.log(`⚠️ No seasons found for series ${tvdbId}`);
-            }
         }
 
         if (!detailedData) {
@@ -88,8 +79,6 @@ async function metaHandler(req, res) {
         if (!meta) {
             return res.status(500).json({ error: 'Failed to process metadata' });
         }
-
-        console.log(`✅ Metadata retrieved for: ${meta.name}`);
 
         res.json({ meta });
 

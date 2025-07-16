@@ -1,6 +1,10 @@
 /**
  * TVDB Catalog Transformer
- * Transforms search results to Stremio catalog format with IMDB filtering
+ * Transforms search results to Stremio catalog format with IM                    if (artwork?.logo) {
+                        meta.logo = artwork.logo;
+                    }
+                } catch (error) {
+                    // Artwork errors are non-fatal, continue without artworktering
  */
 
 const { validateImdbRequirement } = require('../../utils/imdbFilter');
@@ -43,9 +47,8 @@ class CatalogTransformer {
                     imdbFilteredResults.push(meta);
                 } else {
                     console.log(`🚫 "${meta.name}" - No IMDB ID, excluded from catalog`);
-                }
-            } catch (error) {
-                console.log(`❌ "${meta.name}" - Error checking IMDB: ${error.message}, excluded`);
+                }                } catch (error) {
+                    // Skip items that fail validation instead of logging
             }
         }
         

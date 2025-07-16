@@ -60,8 +60,6 @@ async function catalogHandler(req, res) {
         
         // Transform results to Stremio format with user language preference
         const metas = await tvdbService.transformSearchResults(searchResults, type, userLanguage);
-        
-        console.log(`📊 Found ${metas.length} results for "${extraParams.search}"`);
 
         res.json({ metas });
 

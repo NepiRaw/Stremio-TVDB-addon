@@ -45,7 +45,6 @@ class MetadataTransformer {
             const imdbId = this.contentFetcher.extractImdbId(item);
             if (imdbId) {
                 meta.imdb_id = imdbId;
-                console.log(`✅ Found IMDB ID: ${imdbId}`);
             }
 
             // Add basic metadata
@@ -61,7 +60,14 @@ class MetadataTransformer {
             // Clean up empty arrays
             this.cleanupEmptyArrays(meta);
 
-            console.log(`✅ Successfully transformed ${stremioType} metadata: ${meta.name}`);
+            // Add debug information
+            meta._debug = {
+                timestamp: new Date().toISOString(),
+                language: tvdbLanguage,
+                posterSource: meta.poster ? 'artwork-api' : 'fallback',
+                generated: 'fresh'
+            };
+
             return meta;
         } catch (error) {
             console.error('Error transforming detailed metadata:', error);
@@ -80,7 +86,6 @@ class MetadataTransformer {
         
         if (translation && translation.name && translation.name.trim()) {
             meta.name = translation.name;
-            console.log(`✅ Using translated name (${translation.language || tvdbLanguage}): ${meta.name}`);
             
             if (translation.overview && translation.overview.trim()) {
                 meta.description = translation.overview;
@@ -94,8 +99,6 @@ class MetadataTransformer {
      * Apply artwork to metadata
      */
     async applyArtwork(meta, stremioType, numericId, tvdbLanguage, item) {
-        console.log(`🎨 Processing artwork for ${stremioType} ${numericId}`);
-        
         const artwork = await this.artworkHandler.getArtwork(
             stremioType === 'movie' ? 'movies' : 'series', 
             numericId, 
@@ -105,36 +108,51 @@ class MetadataTransformer {
         // Apply high-res artwork if available
         if (artwork.poster) {
             meta.poster = artwork.poster;
-            console.log(`✅ Got high-res poster from artwork API`);
         }
         
         if (artwork.background) {
             meta.background = artwork.background;
-            console.log(`✅ Got high-res background from artwork API`);
         }
         
         if (artwork.logo) {
             meta.logo = artwork.logo;
-            console.log(`🏷️ Got clearlogo from artwork API`);
         }
         
-        // Apply fallbacks if no high-res artwork
+        // Try English fallback for missing artwork if preferred language wasn't English
+        if ((!artwork.poster || !artwork.background || !artwork.logo) && tvdbLanguage !== 'eng') {
+            const englishArtwork = await this.artworkHandler.getArtwork(
+                stremioType === 'movie' ? 'movies' : 'series', 
+                numericId, 
+                'eng'
+            );
+            
+            if (!meta.poster && englishArtwork.poster) {
+                meta.poster = englishArtwork.poster;
+            }
+            
+            if (!meta.background && englishArtwork.background) {
+                meta.background = englishArtwork.background;
+            }
+            
+            if (!meta.logo && englishArtwork.logo) {
+                meta.logo = englishArtwork.logo;
+            }
+        }
+        
+        // Apply final fallbacks if still no artwork
         if (!meta.poster || !meta.background || !meta.logo) {
             const { posterSources, backgroundSources, logoSources } = this.artworkHandler.getArtworkFallbacks(item, stremioType, tvdbLanguage);
             
             if (!meta.poster && posterSources.length > 0) {
                 meta.poster = posterSources[0];
-                console.log(`🔄 Using fallback poster`);
             }
             
             if (!meta.background && backgroundSources.length > 0) {
                 meta.background = backgroundSources[0];
-                console.log(`🔄 Using fallback background`);
             }
             
             if (!meta.logo && logoSources.length > 0) {
                 meta.logo = logoSources[0];
-                console.log(`🔄 Using fallback logo`);
             }
         }
     }
