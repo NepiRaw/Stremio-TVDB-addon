@@ -1,8 +1,4 @@
 /**
- * Logging utilities
- */
-
-/**
  * Request logging middleware
  */
 function requestLogger(req, res, next) {

@@ -1,8 +1,4 @@
 /**
- * Error handling utilities
- */
-
-/**
  * Global error handler middleware
  */
 function errorHandler(err, req, res, next) {

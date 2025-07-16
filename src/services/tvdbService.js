@@ -2,7 +2,6 @@ const axios = require('axios');
 
 /**
  * TVDB API Service
- * Enhanced with Trakt addon patterns for robust, content-agnostic design
  * 
  * Key Features:
  * - TVDB v4 API with JWT authentication
@@ -155,11 +154,21 @@ class TVDBService {
 
     /**
      * Get artwork for a series/movie using TVDB v4 artwork endpoints
-     * Enhanced to prioritize high-resolution images
+     * Enhanced to prioritize high-resolution images with proper endpoint handling
      */
     async getArtwork(entityType, entityId, language = 'eng') {
         try {
-            const endpoint = `/${entityType}/${entityId}/artworks`;
+            // TVDB v4 API: Movies and series both have artwork data, but different type codes
+            let endpoint;
+            if (entityType === 'movies' || entityType === 'movie') {
+                // Movies have artwork in the extended data, not separate endpoint
+                console.log(`🎬 Processing movie artwork from extended data`);
+                return { poster: null, background: null }; // Will use fallback chain with embedded data
+            } else {
+                // Series use dedicated artwork endpoint
+                endpoint = `/series/${entityId}/artworks`;
+            }
+            
             const params = {
                 lang: language
             };
@@ -302,39 +311,29 @@ class TVDBService {
     /**
      * Get translation for entity using TVDB v4 translation endpoints
      */
-    async getTranslation(entityType, entityId, language) {
+    async getTranslation(entityType, entityId, tvdbLanguage) {
         try {
-            // Map user language to TVDB 3-character code
-            const tvdbLang = this.mapToTvdbLanguage(language);
-            const endpoint = `/${entityType}/${entityId}/translations/${tvdbLang}`;
+            // Use the TVDB language code directly (no mapping needed)
+            const endpoint = `/${entityType}/${entityId}/translations/${tvdbLanguage}`;
             
             const response = await this.makeRequest(endpoint);
             return response?.data || null;
         } catch (error) {
-            console.error(`Translation fetch error for ${entityType} ${entityId} in ${language}:`, error.message);
+            console.error(`Translation fetch error for ${entityType} ${entityId} in ${tvdbLanguage}:`, error.message);
             return null;
         }
     }
 
     /**
-     * Map user language to TVDB 3-character language code
+     * Map user language to TVDB 3-character language code (now simplified)
      */
     mapToTvdbLanguage(userLanguage) {
-        const languageMap = {
-            'en': 'eng', 'en-US': 'eng', 'en-us': 'eng', 'EN': 'eng',
-            'fr': 'fra', 'fr-FR': 'fra', 'fr-fr': 'fra', 'FR': 'fra',
-            'es': 'spa', 'es-ES': 'spa', 'es-es': 'spa', 'ES': 'spa',
-            'de': 'deu', 'de-DE': 'deu', 'de-de': 'deu', 'DE': 'deu',
-            'it': 'ita', 'it-IT': 'ita', 'it-it': 'ita', 'IT': 'ita',
-            'pt': 'por', 'pt-BR': 'por', 'pt-br': 'por', 'PT': 'por',
-            'ja': 'jpn', 'ja-JP': 'jpn', 'ja-jp': 'jpn', 'JA': 'jpn',
-            'ko': 'kor', 'ko-KR': 'kor', 'ko-kr': 'kor', 'KO': 'kor',
-            'zh': 'chi', 'zh-CN': 'chi', 'zh-cn': 'chi', 'ZH': 'chi',
-            'ar': 'ara', 'ar-SA': 'ara', 'ar-sa': 'ara', 'AR': 'ara',
-            'ru': 'rus', 'ru-RU': 'rus', 'ru-ru': 'rus', 'RU': 'rus'
-        };
-        
-        return languageMap[userLanguage] || languageMap[userLanguage?.toLowerCase()] || 'eng';
+        // No mapping needed - language is already in TVDB format from frontend
+        // Just validate and provide fallback
+        if (userLanguage && /^[a-z]{3}$/.test(userLanguage)) {
+            return userLanguage;
+        }
+        return 'eng'; // Default fallback
     }
 
     /**
@@ -560,7 +559,7 @@ class TVDBService {
      * Transform detailed TVDB data to full Stremio meta format
      * Completely rewritten to use proper TVDB v4 API patterns
      */
-    async transformDetailedToStremioMeta(item, type, seasonsData = null, userLanguage = 'en-US') {
+    async transformDetailedToStremioMeta(item, type, seasonsData = null, tvdbLanguage = 'eng') {
         try {
             const stremioType = type === 'movie' ? 'movie' : 'series';
             
@@ -583,23 +582,24 @@ class TVDBService {
             };
 
             // Get translations using TVDB v4 translation endpoints
-            const tvdbLang = this.mapToTvdbLanguage(userLanguage);
-            console.log(`🌐 Fetching ${stremioType} translations for language: ${tvdbLang}`);
+            // Language is already in TVDB 3-character format
+            console.log(`🌐 Fetching ${stremioType} translations for TVDB language: ${tvdbLanguage}`);
             
-            const translation = await this.getTranslation(stremioType === 'movie' ? 'movies' : 'series', numericId, tvdbLang);
+            const translation = await this.getTranslation(stremioType === 'movie' ? 'movies' : 'series', numericId, tvdbLanguage);
             
-            if (translation && translation.name && translation.name.trim()) {
+            // Check if we got a translation in the requested language (not a fallback)
+            if (translation && translation.language === tvdbLanguage && translation.name && translation.name.trim()) {
                 meta.name = translation.name;
-                console.log(`✅ Using translated name: ${meta.name}`);
+                console.log(`✅ Using translated name (${tvdbLanguage}): ${meta.name}`);
                 
                 if (translation.overview && translation.overview.trim()) {
                     meta.description = translation.overview;
-                    console.log(`✅ Using translated description`);
+                    console.log(`✅ Using translated description (${tvdbLanguage})`);
                 }
             } else {
                 // Try English fallback if requested language not available
-                if (tvdbLang !== 'eng') {
-                    console.log(`⚠️ No ${tvdbLang} translation found, trying English fallback`);
+                if (tvdbLanguage !== 'eng') {
+                    console.log(`⚠️ No ${tvdbLanguage} translation found, trying English fallback`);
                     const englishTranslation = await this.getTranslation(stremioType === 'movie' ? 'movies' : 'series', numericId, 'eng');
                     
                     if (englishTranslation && englishTranslation.name && englishTranslation.name.trim()) {
@@ -622,50 +622,86 @@ class TVDBService {
                 console.log(`🔄 Final name: ${meta.name}`);
             }
 
-            // Get artwork using TVDB v4 artwork endpoints
-            console.log(`🎨 Fetching artwork for ${stremioType} ${numericId}`);
-            const artwork = await this.getArtwork(stremioType === 'movie' ? 'movies' : 'series', numericId, tvdbLang);
+            // UNIFIED ARTWORK HANDLING: Use high-resolution artwork API for series, enhanced fallbacks for movies
+            console.log(`🎨 Processing artwork for ${stremioType} ${numericId}`);
+            const artwork = await this.getArtwork(stremioType === 'movie' ? 'movies' : 'series', numericId, tvdbLanguage);
             
-            // Enhanced poster selection with fallbacks
+            // Enhanced poster selection with type-specific handling
             if (artwork.poster) {
                 meta.poster = artwork.poster;
                 console.log(`✅ Got high-res poster from artwork API`);
             } else {
-                // Check for high-resolution images in the series data itself
-                const imageSources = [
-                    item.image,           // Primary image
-                    item.poster,          // Direct poster field
-                    item.fanart,          // Fanart field
-                    ...(item.artworks || []).filter(art => art.type === 2 || art.typeName?.includes('poster')).map(art => art.image)
+                // Type-specific poster selection: Movies use Type 14, Series use Type 2
+                const posterSources = [
+                    item.image,           // Primary image (usually poster)
+                    item.poster,          // Explicit poster field
+                    // Filter artworks for the correct poster types based on content type
+                    ...(item.artworks || [])
+                        .filter(art => {
+                            // For movies: Type 14 = posters, for series: Type 2 = posters  
+                            const isMoviePoster = (stremioType === 'movie') && (art.type === 14 || art.typeName?.toLowerCase().includes('poster'));
+                            const isSeriesPoster = (stremioType === 'series') && (art.type === 2 || art.typeName?.toLowerCase().includes('poster'));
+                            return (isMoviePoster || isSeriesPoster) && art.image;
+                        })
+                        .sort((a, b) => {
+                            // Prefer portrait aspect ratios (0.6 - 0.8)
+                            const aRatio = a.width && a.height ? a.width / a.height : 0;
+                            const bRatio = b.width && b.height ? b.width / b.height : 0;
+                            const aIsPortrait = aRatio >= 0.6 && aRatio <= 0.8;
+                            const bIsPortrait = bRatio >= 0.6 && bRatio <= 0.8;
+                            if (aIsPortrait !== bIsPortrait) return bIsPortrait ? 1 : -1;
+                            // Then by resolution (prefer higher resolution)
+                            return ((b.width || 0) * (b.height || 0)) - ((a.width || 0) * (a.height || 0));
+                        })
+                        .map(art => art.image)
                 ].filter(Boolean);
                 
-                if (imageSources.length > 0) {
-                    meta.poster = imageSources[0];
-                    console.log(`🔄 Using fallback poster from series data`);
+                if (posterSources.length > 0) {
+                    meta.poster = posterSources[0];
+                    const isOptimized = posterSources[0] !== item.image && posterSources[0] !== item.poster;
+                    console.log(`🔄 Using ${isOptimized ? 'type-specific artwork' : 'fallback'} poster from ${stremioType} data`);
                 }
             }
             
-            // Enhanced background selection with multiple fallbacks
+            // Enhanced background selection with better landscape prioritization
             if (artwork.background) {
                 meta.background = artwork.background;
                 console.log(`✅ Got high-res background from artwork API`);
             } else {
-                // Look for high-resolution background images in series data
+                // Enhanced fallback background selection prioritizing landscape images
+                // Movies use Type 15 for backgrounds, Series use Type 3
                 const backgroundSources = [
+                    // Filter artworks for landscape background types
+                    ...(item.artworks || [])
+                        .filter(art => {
+                            // For movies: Type 15 = backgrounds, for series: Type 3 = fanart
+                            const isMovieBackground = (stremioType === 'movie') && (art.type === 15 || art.typeName?.toLowerCase().includes('background'));
+                            const isSeriesFanart = (stremioType === 'series') && (art.type === 3 || art.typeName?.toLowerCase().includes('fanart'));
+                            return (isMovieBackground || isSeriesFanart) && art.image;
+                        })
+                        .sort((a, b) => {
+                            // Strongly prefer landscape aspect ratios (1.5 - 2.5)
+                            const aRatio = a.width && a.height ? a.width / a.height : 0;
+                            const bRatio = b.width && b.height ? b.width / b.height : 0;
+                            const aIsLandscape = aRatio >= 1.5 && aRatio <= 2.5;
+                            const bIsLandscape = bRatio >= 1.5 && bRatio <= 2.5;
+                            if (aIsLandscape !== bIsLandscape) return bIsLandscape ? 1 : -1;
+                            // Then by resolution (prefer higher resolution)
+                            return ((b.width || 0) * (b.height || 0)) - ((a.width || 0) * (a.height || 0));
+                        })
+                        .map(art => art.image),
                     item.fanart,          // Fanart is typically good for backgrounds
                     item.backdrop,        // Backdrop field
                     item.background,      // Direct background field
-                    ...(item.artworks || []).filter(art => 
-                        art.type === 3 || 
-                        art.typeName?.toLowerCase().includes('fanart') || 
-                        art.typeName?.toLowerCase().includes('background')
-                    ).map(art => art.image),
-                    item.image           // Final fallback to poster
+                    // Only use poster as final fallback if no landscape options
+                    item.image           // Final fallback to poster (not ideal but better than nothing)
                 ].filter(Boolean);
                 
                 if (backgroundSources.length > 0) {
                     meta.background = backgroundSources[0];
-                    console.log(`🔄 Using fallback background from series data`);
+                    const isFromPoster = backgroundSources[0] === item.image;
+                    const usedLandscapeArt = backgroundSources[0] !== item.image && backgroundSources[0] !== item.fanart && backgroundSources[0] !== item.backdrop && backgroundSources[0] !== item.background;
+                    console.log(`🔄 Using ${isFromPoster ? 'poster as' : usedLandscapeArt ? 'landscape artwork as' : 'fallback'} background from ${stremioType} data`);
                 }
             }
 
@@ -807,15 +843,15 @@ class TVDBService {
                                 let englishFallbackEpisodes = null;
                                 
                                 try {
-                                    console.log(`🌐 Fetching bulk episode translations for language: ${tvdbLang}`);
-                                    const bulkResponse = await this.makeRequest(`/series/${numericId}/episodes/default/${tvdbLang}`);
+                                    console.log(`🌐 Fetching bulk episode translations for language: ${tvdbLanguage}`);
+                                    const bulkResponse = await this.makeRequest(`/series/${numericId}/episodes/default/${tvdbLanguage}`);
                                     translatedEpisodes = bulkResponse?.data?.episodes || null;
                                     
                                     if (translatedEpisodes && translatedEpisodes.length > 0) {
                                         console.log(`✅ Got ${translatedEpisodes.length} translated episodes in bulk`);
                                         
                                         // Always get English fallback if we're not requesting English
-                                        if (tvdbLang !== 'eng') {
+                                        if (tvdbLanguage !== 'eng') {
                                             console.log(`🇬🇧 Fetching English episodes for fallback...`);
                                             try {
                                                 const engResponse = await this.makeRequest(`/series/${numericId}/episodes/default/eng`);
@@ -828,9 +864,9 @@ class TVDBService {
                                                 console.log(`⚠️ English fallback failed: ${engError.message}`);
                                             }
                                         }
-                                    } else if (tvdbLang !== 'eng') {
+                                    } else if (tvdbLanguage !== 'eng') {
                                         // Fallback to English if requested language not available
-                                        console.log(`⚠️ No ${tvdbLang} bulk translations, trying English fallback`);
+                                        console.log(`⚠️ No ${tvdbLanguage} bulk translations, trying English fallback`);
                                         const engResponse = await this.makeRequest(`/series/${numericId}/episodes/default/eng`);
                                         translatedEpisodes = engResponse?.data?.episodes || null;
                                         
@@ -962,6 +998,21 @@ class TVDBService {
                                             }
                                         }
                                         
+                                        // Enhanced thumbnail handling with multiple fallbacks
+                                        let episodeThumbnail = null;
+                                        const thumbnailSources = [
+                                            episode.image,           // Primary episode image
+                                            episode.thumbnail,       // Alternative thumbnail field
+                                            episode.filename,        // Filename-based image
+                                            meta.poster,            // Fallback to series poster
+                                            meta.background,        // Fallback to series background
+                                            item.image              // Fallback to series image
+                                        ].filter(Boolean);
+                                        
+                                        if (thumbnailSources.length > 0) {
+                                            episodeThumbnail = thumbnailSources[0];
+                                        }
+                                        
                                         // Stremio SDK video object format (NO STREAMS - handled by stream handlers)
                                         const video = {
                                             id: videoId,
@@ -969,7 +1020,7 @@ class TVDBService {
                                             season: episode.seasonNumber,
                                             episode: episode.number,
                                             overview: episodeOverview,
-                                            thumbnail: episode.image || null,
+                                            thumbnail: episodeThumbnail,
                                             released: episode.aired ? new Date(episode.aired).toISOString() : null
                                         };
                                         
@@ -1011,9 +1062,23 @@ class TVDBService {
                     };
                 }
             } else {
-                // For movies, no auto-selection - user must explicitly choose to play
+                // MOVIES: Need videos array with single video object for stream addon compatibility
+                // According to Stremio SDK: "If you do not provide videos (e.g. for movie), 
+                // Stremio assumes this meta item has one video, and it's ID is equal to the meta item id"
+                // However, stream addons work better with explicit videos array
+                
+                const movieVideoId = imdbId || id; // Use IMDB ID if available, otherwise TVDB ID
+                
+                meta.videos = [{
+                    id: movieVideoId,
+                    title: meta.name,
+                    released: item.year ? `${item.year}-01-01T00:00:00.000Z` : null
+                }];
+                
+                console.log(`🎬 Created movie video object with ID: ${movieVideoId}`);
+                
+                // Movies don't need complex behavior hints
                 meta.behaviorHints = {
-                    defaultVideoId: null,  // No auto-selection for movies either
                     hasScheduledVideos: false
                 };
             }

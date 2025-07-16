@@ -1,62 +1,22 @@
 const tvdbService = require('../services/tvdbService');
 
 /**
- * Extract language preference from URL parameter or Accept-Language header
- * @param {object} req - Express request object
- * @returns {string} - Language code (e.g., 'fr-FR', 'es-ES')
+ * Extract TVDB language code from URL parameter
+ * @param {object} req - Express request object  
+ * @returns {string} - TVDB 3-character language code (e.g., 'fra', 'spa', 'eng')
  */
 function getLanguagePreference(req) {
-    // First priority: URL parameter (e.g., /es-ES/catalog/...)
+    // Language comes from URL parameter (e.g., /fra/catalog/...)
     if (req.params.language) {
         const urlLang = req.params.language;
-        if (/^[a-z]{2}-[A-Z]{2}$/.test(urlLang)) {
+        // Validate it's a 3-character TVDB language code
+        if (/^[a-z]{3}$/.test(urlLang)) {
             return urlLang;
         }
     }
     
-    // Second priority: Accept-Language header
-    const acceptLanguage = req.headers['accept-language'];
-    if (acceptLanguage) {
-        // Parse Accept-Language header (e.g., "fr-FR,fr;q=0.9,en;q=0.8")
-        const languages = acceptLanguage
-            .split(',')
-            .map(lang => {
-                const parts = lang.trim().split(';');
-                const code = parts[0].trim();
-                const quality = parts[1] ? parseFloat(parts[1].split('=')[1]) : 1.0;
-                return { code, quality };
-            })
-            .sort((a, b) => b.quality - a.quality);
-        
-        // Get the highest priority language
-        const preferredLang = languages[0];
-        if (preferredLang) {
-            // Normalize to full language code
-            const langCode = preferredLang.code.toLowerCase();
-            if (langCode.includes('-')) {
-                const [lang, country] = langCode.split('-');
-                return `${lang}-${country.toUpperCase()}`;
-            } else {
-                // Map common 2-letter codes to full codes
-                const langMap = {
-                    'en': 'en-US',
-                    'es': 'es-ES',
-                    'fr': 'fr-FR',
-                    'de': 'de-DE',
-                    'it': 'it-IT',
-                    'pt': 'pt-BR',
-                    'ja': 'ja-JP',
-                    'ko': 'ko-KR',
-                    'zh': 'zh-CN',
-                    'ru': 'ru-RU'
-                };
-                return langMap[langCode] || 'en-US';
-            }
-        }
-    }
-    
     // Default: English
-    return 'en-US';
+    return 'eng';
 }
 
 /**
