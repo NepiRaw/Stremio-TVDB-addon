@@ -25,7 +25,7 @@ class TVDBService {
         this.contentFetcher = new ContentFetcher(this);
         this.translationService = new TranslationService(this);
         this.artworkHandler = new ArtworkHandler(this);
-        this.catalogTransformer = new CatalogTransformer(this.contentFetcher, this.translationService);
+        this.catalogTransformer = new CatalogTransformer(this.contentFetcher, this.translationService, this.artworkHandler);
         this.metadataTransformer = new MetadataTransformer(
             this.contentFetcher, 
             this.translationService, 

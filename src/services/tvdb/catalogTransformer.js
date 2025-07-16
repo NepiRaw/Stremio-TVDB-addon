@@ -6,9 +6,10 @@
 const { validateImdbRequirement } = require('../../utils/imdbFilter');
 
 class CatalogTransformer {
-    constructor(contentFetcher, translationService) {
+    constructor(contentFetcher, translationService, artworkHandler) {
         this.contentFetcher = contentFetcher;
         this.translationService = translationService;
+        this.artworkHandler = artworkHandler;
     }
 
     /**
