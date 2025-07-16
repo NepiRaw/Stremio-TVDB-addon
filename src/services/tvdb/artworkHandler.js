@@ -14,7 +14,7 @@ class ArtworkHandler {
     async getArtwork(entityType, entityId, language = 'eng') {
         try {
             if (entityType === 'movies' || entityType === 'movie') {
-                // Movies have artwork in extended data, not separate endpoint
+                // Movies don't have artwork endpoint in TVDB API v4, fall back to basic sources
                 return { poster: null, background: null, logo: null };
             }
             
@@ -24,9 +24,9 @@ class ArtworkHandler {
             });
             
             const artworks = response?.data?.artworks || [];
-            const result = this.selectOptimalArtwork(artworks);
+            const result = this.selectOptimalArtwork(artworks, language);
             
-            // Add clearlogo selection
+            // Add clearlogo selection  
             result.logo = this.selectBestClearlogo(artworks, language);
             
             return result;
@@ -39,7 +39,7 @@ class ArtworkHandler {
     /**
      * Select optimal poster and background from artwork array
      */
-    selectOptimalArtwork(artworks) {
+    selectOptimalArtwork(artworks, preferredLanguage = 'eng') {
         const posters = [];
         const backgrounds = [];
         
@@ -58,26 +58,40 @@ class ArtworkHandler {
         }
         
         return {
-            poster: this.selectBestPoster(posters),
+            poster: this.selectBestPoster(posters, preferredLanguage),
             background: this.selectBestBackground(backgrounds)
         };
     }
 
     /**
-     * Select best poster prioritizing resolution and score
+     * Select best poster with language fallback chain
+     * Fallback: poster (pref lang) -> poster (eng) -> poster (any) -> null
      */
-    selectBestPoster(posters) {
+    selectBestPoster(posters, preferredLanguage = 'eng') {
         if (posters.length === 0) return null;
         
-        const bestPoster = posters.sort((a, b) => {
-            const aResolution = (a.width || 0) * (a.height || 0);
-            const bResolution = (b.width || 0) * (b.height || 0);
-            if (aResolution !== bResolution) return bResolution - aResolution;
-            return (b.score || 0) - (a.score || 0);
-        })[0];
+        // Step 1: Try preferred language
+        const preferredLangPosters = posters.filter(art => art.language === preferredLanguage);
+        if (preferredLangPosters.length > 0) {
+            const best = this.selectBestFromArray(preferredLangPosters);
+            console.log(`🎨 Selected poster (${preferredLanguage}): ${best.width}x${best.height} (score: ${best.score})`);
+            return best.image;
+        }
         
-        console.log(`🎨 Selected poster: ${bestPoster.width}x${bestPoster.height} (score: ${bestPoster.score})`);
-        return bestPoster.image;
+        // Step 2: Try English if preferred wasn't English
+        if (preferredLanguage !== 'eng') {
+            const englishPosters = posters.filter(art => art.language === 'eng');
+            if (englishPosters.length > 0) {
+                const best = this.selectBestFromArray(englishPosters);
+                console.log(`🎨 Selected poster (eng fallback): ${best.width}x${best.height} (score: ${best.score})`);
+                return best.image;
+            }
+        }
+        
+        // Step 3: Try any language available (highest score/resolution)
+        const best = this.selectBestFromArray(posters);
+        console.log(`🎨 Selected poster (any lang): ${best.width}x${best.height} (lang: ${best.language || 'unknown'}, score: ${best.score})`);
+        return best.image;
     }
 
     /**
