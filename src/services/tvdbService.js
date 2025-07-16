@@ -597,10 +597,17 @@ class TVDBService {
     /**
      * Transform detailed TVDB data to full Stremio meta format
      * Completely rewritten to use proper TVDB v4 API patterns
+     * CRITICAL: Only processes content with IMDB IDs for stream compatibility
      */
     async transformDetailedToStremioMeta(item, type, seasonsData = null, tvdbLanguage = 'eng') {
         try {
             const stremioType = type === 'movie' ? 'movie' : 'series';
+            
+            // CRITICAL: Validate IMDB ID requirement before processing
+            if (!validateImdbRequirement(item, stremioType)) {
+                console.log(`🚫 Skipping ${stremioType} transformation - IMDB ID required for stream compatibility`);
+                return null;
+            }
             
             // Extract numeric ID
             let numericId = item.id;
