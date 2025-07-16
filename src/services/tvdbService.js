@@ -9,6 +9,7 @@ const TranslationService = require('./tvdb/translationService');
 const ArtworkHandler = require('./tvdb/artworkHandler');
 const CatalogTransformer = require('./tvdb/catalogTransformer');
 const MetadataTransformer = require('./tvdb/metadataTransformer');
+const { getEnhancedReleaseInfo } = require('../utils/theatricalStatus');
 
 class TVDBService {
     constructor() {

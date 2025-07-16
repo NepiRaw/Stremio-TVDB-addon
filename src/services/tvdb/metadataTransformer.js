@@ -4,6 +4,7 @@
  */
 
 const { validateImdbRequirement } = require('../../utils/imdbFilter');
+const { getEnhancedReleaseInfo } = require('../../utils/theatricalStatus');
 
 class MetadataTransformer {
     constructor(contentFetcher, translationService, artworkHandler) {
@@ -48,7 +49,7 @@ class MetadataTransformer {
             }
 
             // Add basic metadata
-            this.addBasicMetadata(meta, item);
+            this.addBasicMetadata(meta, item, tvdbLanguage);
 
             // Add type-specific content
             if (stremioType === 'series') {
@@ -160,8 +161,11 @@ class MetadataTransformer {
     /**
      * Add basic metadata (year, genres, cast, etc.)
      */
-    addBasicMetadata(meta, item) {
-        // Enhanced year with date range for series
+    addBasicMetadata(meta, item, tvdbLanguage = 'eng') {
+        // Enhanced release info with theatrical status FIRST (before year processing)
+        this.addTheatricalReleaseInfo(meta, item, tvdbLanguage);
+        
+        // Enhanced year with date range for series (but preserve theatrical year for movies)
         this.addEnhancedYear(meta, item);
         
         // Runtime information
@@ -199,6 +203,12 @@ class MetadataTransformer {
      * Add enhanced year with date range for series
      */
     addEnhancedYear(meta, item) {
+        // For movies, preserve theatrical status year if already set
+        if (meta.type === 'movie' && meta.year) {
+            console.log(`📅 Preserving theatrical year for movie: ${meta.year}`);
+            return;
+        }
+        
         const startYear = item.firstAired ? new Date(item.firstAired).getFullYear() : 
                          item.year ? parseInt(item.year) : null;
         
@@ -231,9 +241,51 @@ class MetadataTransformer {
                 }
                 console.log(`📅 Series year (unknown status): ${meta.year}`);
             }
-        } else {
-            // For movies, use simple year
+        } else if (meta.type === 'movie' && !meta.year) {
+            // For movies without theatrical year, use simple year
             meta.year = startYear;
+        }
+    }
+
+    /**
+     * Add theatrical release information for movies
+     */
+    addTheatricalReleaseInfo(meta, item, tvdbLanguage = 'eng') {
+        // Only apply to movies
+        if (meta.type !== 'movie') return;
+        
+        try {
+            const releaseInfo = getEnhancedReleaseInfo(item, tvdbLanguage);
+            
+            // Set Stremio standard fields
+            if (releaseInfo.year) {
+                meta.year = releaseInfo.year;
+            }
+            
+            if (releaseInfo.releaseInfo) {
+                meta.releaseInfo = releaseInfo.releaseInfo;
+            }
+            
+            if (releaseInfo.released) {
+                meta.released = releaseInfo.released;
+            }
+            
+            // Add theatrical status to description
+            if (releaseInfo.statusMessage) {
+                const currentDescription = meta.description || '';
+                
+                // Prepend theatrical status to description
+                if (currentDescription) {
+                    meta.description = `${releaseInfo.statusMessage}\n\n${currentDescription}`;
+                } else {
+                    meta.description = releaseInfo.statusMessage;
+                }
+                
+                console.log(`🎬 Added theatrical status: ${releaseInfo.statusMessage}`);
+            }
+            
+        } catch (error) {
+            console.error('Error adding theatrical status:', error);
         }
     }
 
