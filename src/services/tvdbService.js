@@ -1014,7 +1014,6 @@ class TVDBService {
                                             // Use requested language if available and not null/empty
                                             if (translatedEp.name && translatedEp.name.trim() && translatedEp.name.toLowerCase() !== 'null') {
                                                 episodeName = translatedEp.name;
-                                                console.log(`🎭 Bulk translated S${episode.seasonNumber}E${episode.number}: ${episodeName}`);
                                                 
                                                 if (translatedEp.overview && translatedEp.overview.trim()) {
                                                     episodeOverview = translatedEp.overview;
