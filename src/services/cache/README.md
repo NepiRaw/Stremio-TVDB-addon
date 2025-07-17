@@ -97,7 +97,6 @@ ADMIN_API_KEY=your-secure-key
 - **translation**: Language translations (3 days TTL)
 - **metadata**: Content metadata (12 hours TTL)
 - **season**: Episode/season data (6 hours TTL)
-- **static**: Static data like genres (30 days TTL)
 
 ## Integration
 

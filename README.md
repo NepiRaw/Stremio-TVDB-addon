@@ -15,7 +15,7 @@ A high-performance Stremio addon that provides comprehensive catalog search func
 ## Performance & Caching
 
 ### Enhanced Caching System
-- **7-tier cache architecture** with optimized TTLs
+- **6-tier cache architecture** with optimized TTLs
 - **Intelligent TTL management**: Different cache durations per data type
 - **Automatic cleanup**: Memory-efficient with 5-minute cleanup cycles
 
@@ -79,25 +79,6 @@ npm test
 curl -H "X-Admin-Key: your-key" http://localhost:3000/admin/cache/stats
 ```
 
-## Enhanced Architecture
-
-### Multi-Service Design
-- **Modular services** for better maintainability  
-- **Single responsibility** principle throughout
-- **Error isolation** and graceful recovery
-- **Dependency injection** patterns
-
-### Performance Features
-- **7-tier caching** with TTL optimization (64% faster responses)
-- **Background updates** with TVDB change monitoring every 12 hours
-- **Connection pooling** for efficient API usage
-- **Exponential backoff** for error resilience
-
-### Security & Monitoring
-- **Secured admin endpoints** with API key authentication
-- **Rate limiting** to prevent abuse (10 req/min per IP)
-- **Comprehensive logging** with structured data
-- **Production monitoring** tools included
 
 ## Future Enhancements
 

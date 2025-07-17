@@ -38,8 +38,7 @@ class CacheMigration {
             { name: 'artwork', sourceMap: this.inMemoryCache.artworkCache },
             { name: 'translation', sourceMap: this.inMemoryCache.translationCache },
             { name: 'metadata', sourceMap: this.inMemoryCache.metadataCache },
-            { name: 'season', sourceMap: this.inMemoryCache.seasonCache },
-            { name: 'static', sourceMap: this.inMemoryCache.staticCache }
+            { name: 'season', sourceMap: this.inMemoryCache.seasonCache }
         ];
 
         let totalMigrated = 0;
@@ -77,14 +76,14 @@ class CacheMigration {
         
         // Test in-memory cache
         const memoryStart = Date.now();
-        this.inMemoryCache.setCachedData(this.inMemoryCache.staticCache, testKey, testData, 60000);
-        const memoryResult = this.inMemoryCache.getCachedData(this.inMemoryCache.staticCache, testKey);
+        this.inMemoryCache.setCachedData(this.inMemoryCache.searchCache, testKey, testData, 60000);
+        const memoryResult = this.inMemoryCache.getCachedData(this.inMemoryCache.searchCache, testKey);
         const memoryDuration = Date.now() - memoryStart;
         
         // Test hybrid cache
         const hybridStart = Date.now();
-        await this.hybridCache.setCachedData('static', testKey, testData, 60000);
-        const hybridResult = await this.hybridCache.getCachedData('static', testKey);
+        await this.hybridCache.setCachedData('search', testKey, testData, 60000);
+        const hybridResult = await this.hybridCache.getCachedData('search', testKey);
         const hybridDuration = Date.now() - hybridStart;
         
         console.log(`📊 In-Memory Cache: ${memoryDuration}ms`);

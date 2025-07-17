@@ -13,7 +13,6 @@ class CacheService {
         this.translationCache = new Map();     // Language translations
         this.metadataCache = new Map();        // Full content metadata
         this.seasonCache = new Map();          // Season/episode data
-        this.staticCache = new Map();          // Genres, types, etc.
         
         // Cache TTL configurations (optimized for different data types)
         this.CACHE_TTLS = {
@@ -22,8 +21,7 @@ class CacheService {
             artwork: 14 * 24 * 60 * 60 * 1000, // 14 days - artwork is very static
             translation: 3 * 24 * 60 * 60 * 1000, // 3 days - translations rarely update
             metadata: 12 * 60 * 60 * 1000,     // 12 hours - basic metadata updates infrequently
-            season: 6 * 60 * 60 * 1000,        // 6 hours - episodes update occasionally
-            static: 30 * 24 * 60 * 60 * 1000   // 30 days - genres/types are very static
+            season: 6 * 60 * 60 * 1000         // 6 hours - episodes update occasionally
         };
         
         // Future /updates endpoint configuration
@@ -224,31 +222,6 @@ class CacheService {
         this.setCachedData(this.seasonCache, key, seasonData, this.CACHE_TTLS.season);
     }
 
-    // ==================== STATIC CACHE ====================
-
-    /**
-     * Generate cache key for static data
-     */
-    generateStaticKey(dataType) {
-        return `static:${dataType}`;
-    }
-
-    /**
-     * Get cached static data
-     */
-    getStaticData(dataType) {
-        const key = this.generateStaticKey(dataType);
-        return this.getCachedData(this.staticCache, key);
-    }
-
-    /**
-     * Cache static data
-     */
-    setStaticData(dataType, data) {
-        const key = this.generateStaticKey(dataType);
-        this.setCachedData(this.staticCache, key, data, this.CACHE_TTLS.static);
-    }
-
     // ==================== CACHE MANAGEMENT ====================
 
     /**
@@ -261,8 +234,7 @@ class CacheService {
             artwork: this.artworkCache.size,
             translation: this.translationCache.size,
             metadata: this.metadataCache.size,
-            season: this.seasonCache.size,
-            static: this.staticCache.size
+            season: this.seasonCache.size
         };
         
         this.searchCache.clear();
@@ -271,7 +243,6 @@ class CacheService {
         this.translationCache.clear();
         this.metadataCache.clear();
         this.seasonCache.clear();
-        this.staticCache.clear();
         
         console.log(`🗑️ Cleared all caches:`, counts);
     }
@@ -288,8 +259,7 @@ class CacheService {
             { name: 'artwork', map: this.artworkCache },
             { name: 'translation', map: this.translationCache },
             { name: 'metadata', map: this.metadataCache },
-            { name: 'season', map: this.seasonCache },
-            { name: 'static', map: this.staticCache }
+            { name: 'season', map: this.seasonCache }
         ];
 
         cacheTypes.forEach(cache => {
@@ -335,8 +305,7 @@ class CacheService {
             'artwork': this.artworkCache,
             'translation': this.translationCache,
             'metadata': this.metadataCache,
-            'season': this.seasonCache,
-            'static': this.staticCache
+            'season': this.seasonCache
         };
         return cacheMappers[cacheType];
     }
@@ -352,9 +321,8 @@ class CacheService {
             translationEntries: this.translationCache.size,
             metadataEntries: this.metadataCache.size,
             seasonEntries: this.seasonCache.size,
-            staticEntries: this.staticCache.size,
             totalEntries: this.searchCache.size + this.imdbCache.size + this.artworkCache.size + 
-                         this.translationCache.size + this.metadataCache.size + this.seasonCache.size + this.staticCache.size,
+                         this.translationCache.size + this.metadataCache.size + this.seasonCache.size,
             cacheTTLs: this.CACHE_TTLS
         };
     }
@@ -372,8 +340,7 @@ class CacheService {
             { name: 'artwork', map: this.artworkCache },
             { name: 'translation', map: this.translationCache },
             { name: 'metadata', map: this.metadataCache },
-            { name: 'season', map: this.seasonCache },
-            { name: 'static', map: this.staticCache }
+            { name: 'season', map: this.seasonCache }
         ];
 
         cacheTypes.forEach(cache => {

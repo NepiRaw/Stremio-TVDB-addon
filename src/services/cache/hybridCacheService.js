@@ -15,7 +15,6 @@ class HybridCacheService {
         this.translationCache = new Map();
         this.metadataCache = new Map();
         this.seasonCache = new Map();
-        this.staticCache = new Map();
         
         // L2 Cache: MongoDB (persistence)
         this.mongoClient = null;
@@ -29,8 +28,7 @@ class HybridCacheService {
             artwork: 14 * 24 * 60 * 60 * 1000, // 14 days
             translation: 3 * 24 * 60 * 60 * 1000, // 3 days
             metadata: 12 * 60 * 60 * 1000,     // 12 hours
-            season: 6 * 60 * 60 * 1000,        // 6 hours
-            static: 30 * 24 * 60 * 60 * 1000   // 30 days
+            season: 6 * 60 * 60 * 1000         // 6 hours
         };
         
         // MongoDB collection mapping
@@ -40,8 +38,7 @@ class HybridCacheService {
             artwork: 'cache_artwork',
             translation: 'cache_translation',
             metadata: 'cache_metadata',
-            season: 'cache_season',
-            static: 'cache_static'
+            season: 'cache_season'
         };
         
         // Initialize MongoDB connection if URI is available
@@ -118,8 +115,7 @@ class HybridCacheService {
             'artwork': this.artworkCache,
             'translation': this.translationCache,
             'metadata': this.metadataCache,
-            'season': this.seasonCache,
-            'static': this.staticCache
+            'season': this.seasonCache
         };
         return cacheMappers[cacheType];
     }
@@ -232,8 +228,7 @@ class HybridCacheService {
             { name: 'artwork', map: this.artworkCache },
             { name: 'translation', map: this.translationCache },
             { name: 'metadata', map: this.metadataCache },
-            { name: 'season', map: this.seasonCache },
-            { name: 'static', map: this.staticCache }
+            { name: 'season', map: this.seasonCache }
         ];
 
         cacheTypes.forEach(cache => {
@@ -288,7 +283,6 @@ class HybridCacheService {
                 translationEntries: this.translationCache.size,
                 metadataEntries: this.metadataCache.size,
                 seasonEntries: this.seasonCache.size,
-                staticEntries: this.staticCache.size,
                 totalEntries: 0
             },
             l2Cache: {
@@ -440,8 +434,7 @@ class HybridCacheService {
             { name: 'artwork', map: this.artworkCache },
             { name: 'translation', map: this.translationCache },
             { name: 'metadata', map: this.metadataCache },
-            { name: 'season', map: this.seasonCache },
-            { name: 'static', map: this.staticCache }
+            { name: 'season', map: this.seasonCache }
         ];
 
         cacheTypes.forEach(cache => {
@@ -482,8 +475,7 @@ class HybridCacheService {
             artwork: this.artworkCache.size,
             translation: this.translationCache.size,
             metadata: this.metadataCache.size,
-            season: this.seasonCache.size,
-            static: this.staticCache.size
+            season: this.seasonCache.size
         };
         
         this.searchCache.clear();
@@ -492,7 +484,6 @@ class HybridCacheService {
         this.translationCache.clear();
         this.metadataCache.clear();
         this.seasonCache.clear();
-        this.staticCache.clear();
         
         console.log('🗑️ Cleared all L1 caches:', l1Counts);
         
