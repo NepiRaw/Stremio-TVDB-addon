@@ -3,6 +3,8 @@
  * Handles poster, background, and logo selection for movies and series
  */
 
+const cacheService = require('../cacheService');
+
 class ArtworkHandler {
     constructor(apiClient) {
         this.apiClient = apiClient;
@@ -13,9 +15,20 @@ class ArtworkHandler {
      */
     async getArtwork(entityType, entityId, language = 'eng') {
         try {
+            // Check cache first
+            const cacheKey = `${entityType}:${entityId}:${language}`;
+            const cachedArtwork = cacheService.getArtwork(entityType, entityId, language);
+            if (cachedArtwork) {
+                console.log(`💾 Artwork cache HIT for ${entityType} ${entityId}`);
+                return cachedArtwork;
+            }
+
             if (entityType === 'movies' || entityType === 'movie') {
                 // Movies don't have artwork endpoint in TVDB API v4, fall back to basic sources
-                return { poster: null, background: null, logo: null };
+                const result = { poster: null, background: null, logo: null };
+                // Cache the negative result to avoid repeated API calls
+                cacheService.setArtwork(entityType, entityId, language, result);
+                return result;
             }
             
             // Series use dedicated artwork endpoint
@@ -26,7 +39,10 @@ class ArtworkHandler {
             const artworks = response?.data?.artworks || [];
             
             if (artworks.length === 0) {
-                return { poster: null, background: null, logo: null };
+                const result = { poster: null, background: null, logo: null };
+                // Cache the negative result
+                cacheService.setArtwork(entityType, entityId, language, result);
+                return result;
             }
             
             const result = this.selectOptimalArtwork(artworks, language);
@@ -34,10 +50,17 @@ class ArtworkHandler {
             // Add clearlogo selection  
             result.logo = this.selectBestClearlogo(artworks, language);
             
+            // Cache the artwork data
+            cacheService.setArtwork(entityType, entityId, language, result);
+            console.log(`🎨 Cached artwork for ${entityType} ${entityId}`);
+            
             return result;
         } catch (error) {
             console.error(`❌ Artwork fetch error for ${entityType} ${entityId}:`, error.message);
-            return { poster: null, background: null, logo: null };
+            // Cache negative result to avoid repeated failures
+            const result = { poster: null, background: null, logo: null };
+            cacheService.setArtwork(entityType, entityId, language, result);
+            return result;
         }
     }
 

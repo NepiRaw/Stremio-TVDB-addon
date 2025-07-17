@@ -1,20 +1,77 @@
 /**
- * Simple In-Memory Cache Service
- * Provides temporary caching for search results and IMDB validation
+ * Enhanced In-Memory Cache Service
+ * Provides comprehensive caching for all TVDB data types
+ * Future-proof design for MongoDB migration
  */
 
 class CacheService {
     constructor() {
-        this.searchCache = new Map();
-        this.imdbCache = new Map();
+        // Different caches for different data types
+        this.searchCache = new Map();           // Search results
+        this.imdbCache = new Map();            // IMDB validation
+        this.artworkCache = new Map();         // Artwork data (posters, backgrounds, etc.)
+        this.translationCache = new Map();     // Language translations
+        this.metadataCache = new Map();        // Full content metadata
+        this.seasonCache = new Map();          // Season/episode data
+        this.staticCache = new Map();          // Genres, types, etc.
         
-        // Cache configurations (in milliseconds)
-        this.SEARCH_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
-        this.IMDB_CACHE_TTL = 60 * 60 * 1000;  // 1 hour
+        // Cache TTL configurations (optimized for different data types)
+        this.CACHE_TTLS = {
+            search: 30 * 60 * 1000,           // 30 minutes - searches are popular
+            imdb: 2 * 60 * 60 * 1000,         // 2 hours - IMDB IDs rarely change
+            artwork: 24 * 60 * 60 * 1000,     // 24 hours - artwork is static
+            translation: 6 * 60 * 60 * 1000,  // 6 hours - translations rarely update
+            metadata: 2 * 60 * 60 * 1000,     // 2 hours - basic metadata updates infrequently
+            season: 4 * 60 * 60 * 1000,       // 4 hours - episodes update occasionally
+            static: 7 * 24 * 60 * 60 * 1000   // 7 days - genres/types are very static
+        };
         
         // Start cleanup interval
         this.startCleanupInterval();
     }
+
+    /**
+     * Generic cache getter (future-proof for MongoDB)
+     */
+    getCachedData(cacheMap, key) {
+        const cached = cacheMap.get(key);
+        
+        if (cached && Date.now() < cached.expiry) {
+            console.log(`💾 Cache HIT: ${key}`);
+            return cached.data;
+        }
+        
+        if (cached) {
+            cacheMap.delete(key); // Remove expired entry
+        }
+        
+        console.log(`🔍 Cache MISS: ${key}`);
+        return null;
+    }
+
+    /**
+     * Generic cache setter (future-proof for MongoDB)
+     */
+    setCachedData(cacheMap, key, data, ttl) {
+        const entry = {
+            data: data,
+            expiry: Date.now() + ttl,
+            timestamp: Date.now(),
+            type: this.getCacheTypeFromKey(key)
+        };
+        
+        cacheMap.set(key, entry);
+        console.log(`💾 Cached data: ${key} (TTL: ${Math.round(ttl / 60000)}min)`);
+    }
+
+    /**
+     * Helper to identify cache type from key (useful for MongoDB migration)
+     */
+    getCacheTypeFromKey(key) {
+        return key.split(':')[0];
+    }
+
+    // ==================== SEARCH CACHE ====================
 
     /**
      * Generate cache key for search queries
@@ -24,30 +81,11 @@ class CacheService {
     }
 
     /**
-     * Generate cache key for IMDB validation
-     */
-    generateImdbKey(contentType, contentId) {
-        return `imdb:${contentType}:${contentId}`;
-    }
-
-    /**
      * Get cached search results
      */
     getSearchResults(query, type, language = 'eng') {
         const key = this.generateSearchKey(query, type, language);
-        const cached = this.searchCache.get(key);
-        
-        if (cached && Date.now() < cached.expiry) {
-            console.log(`💾 Cache HIT for search: ${key}`);
-            return cached.data;
-        }
-        
-        if (cached) {
-            this.searchCache.delete(key); // Remove expired entry
-        }
-        
-        console.log(`🔍 Cache MISS for search: ${key}`);
-        return null;
+        return this.getCachedData(this.searchCache, key);
     }
 
     /**
@@ -55,12 +93,16 @@ class CacheService {
      */
     setSearchResults(query, type, language = 'eng', results) {
         const key = this.generateSearchKey(query, type, language);
-        this.searchCache.set(key, {
-            data: results,
-            expiry: Date.now() + this.SEARCH_CACHE_TTL,
-            timestamp: Date.now()
-        });
-        console.log(`💾 Cached search results: ${key} (${results.length} items)`);
+        this.setCachedData(this.searchCache, key, results, this.CACHE_TTLS.search);
+    }
+
+    // ==================== IMDB CACHE ====================
+
+    /**
+     * Generate cache key for IMDB validation
+     */
+    generateImdbKey(contentType, contentId) {
+        return `imdb:${contentType}:${contentId}`;
     }
 
     /**
@@ -68,17 +110,7 @@ class CacheService {
      */
     getImdbValidation(contentType, contentId) {
         const key = this.generateImdbKey(contentType, contentId);
-        const cached = this.imdbCache.get(key);
-        
-        if (cached && Date.now() < cached.expiry) {
-            return cached.data;
-        }
-        
-        if (cached) {
-            this.imdbCache.delete(key); // Remove expired entry
-        }
-        
-        return null;
+        return this.getCachedData(this.imdbCache, key);
     }
 
     /**
@@ -86,63 +118,240 @@ class CacheService {
      */
     setImdbValidation(contentType, contentId, isValid, detailData = null) {
         const key = this.generateImdbKey(contentType, contentId);
-        this.imdbCache.set(key, {
-            data: { isValid, detailData },
-            expiry: Date.now() + this.IMDB_CACHE_TTL,
-            timestamp: Date.now()
-        });
+        this.setCachedData(this.imdbCache, key, { isValid, detailData }, this.CACHE_TTLS.imdb);
     }
+
+    // ==================== ARTWORK CACHE ====================
+
+    /**
+     * Generate cache key for artwork
+     */
+    generateArtworkKey(contentType, contentId, artworkType = 'all') {
+        return `artwork:${contentType}:${contentId}:${artworkType}`;
+    }
+
+    /**
+     * Get cached artwork data
+     */
+    getArtwork(contentType, contentId, artworkType = 'all') {
+        const key = this.generateArtworkKey(contentType, contentId, artworkType);
+        return this.getCachedData(this.artworkCache, key);
+    }
+
+    /**
+     * Cache artwork data
+     */
+    setArtwork(contentType, contentId, artworkType = 'all', artworkData) {
+        const key = this.generateArtworkKey(contentType, contentId, artworkType);
+        this.setCachedData(this.artworkCache, key, artworkData, this.CACHE_TTLS.artwork);
+    }
+
+    // ==================== TRANSLATION CACHE ====================
+
+    /**
+     * Generate cache key for translations
+     */
+    generateTranslationKey(contentType, contentId, language, dataType = 'all') {
+        return `translation:${contentType}:${contentId}:${language}:${dataType}`;
+    }
+
+    /**
+     * Get cached translation data
+     */
+    getTranslation(contentType, contentId, language, dataType = 'all') {
+        const key = this.generateTranslationKey(contentType, contentId, language, dataType);
+        return this.getCachedData(this.translationCache, key);
+    }
+
+    /**
+     * Cache translation data
+     */
+    setTranslation(contentType, contentId, language, dataType = 'all', translationData) {
+        const key = this.generateTranslationKey(contentType, contentId, language, dataType);
+        this.setCachedData(this.translationCache, key, translationData, this.CACHE_TTLS.translation);
+    }
+
+    // ==================== METADATA CACHE ====================
+
+    /**
+     * Generate cache key for metadata
+     */
+    generateMetadataKey(contentType, contentId, language = null) {
+        return language ? `metadata:${contentType}:${contentId}:${language}` : `metadata:${contentType}:${contentId}`;
+    }
+
+    /**
+     * Get cached metadata
+     */
+    getMetadata(contentType, contentId, language = null) {
+        const key = this.generateMetadataKey(contentType, contentId, language);
+        return this.getCachedData(this.metadataCache, key);
+    }
+
+    /**
+     * Cache metadata
+     */
+    setMetadata(contentType, contentId, language = null, metadata) {
+        const key = this.generateMetadataKey(contentType, contentId, language);
+        this.setCachedData(this.metadataCache, key, metadata, this.CACHE_TTLS.metadata);
+    }
+
+    // ==================== SEASON CACHE ====================
+
+    /**
+     * Generate cache key for season data
+     */
+    generateSeasonKey(seriesId, seasonNumber = null) {
+        return seasonNumber ? `season:${seriesId}:${seasonNumber}` : `seasons:${seriesId}`;
+    }
+
+    /**
+     * Get cached season data
+     */
+    getSeasonData(seriesId, seasonNumber = null) {
+        const key = this.generateSeasonKey(seriesId, seasonNumber);
+        return this.getCachedData(this.seasonCache, key);
+    }
+
+    /**
+     * Cache season data
+     */
+    setSeasonData(seriesId, seasonNumber = null, seasonData) {
+        const key = this.generateSeasonKey(seriesId, seasonNumber);
+        this.setCachedData(this.seasonCache, key, seasonData, this.CACHE_TTLS.season);
+    }
+
+    // ==================== STATIC CACHE ====================
+
+    /**
+     * Generate cache key for static data
+     */
+    generateStaticKey(dataType) {
+        return `static:${dataType}`;
+    }
+
+    /**
+     * Get cached static data
+     */
+    getStaticData(dataType) {
+        const key = this.generateStaticKey(dataType);
+        return this.getCachedData(this.staticCache, key);
+    }
+
+    /**
+     * Cache static data
+     */
+    setStaticData(dataType, data) {
+        const key = this.generateStaticKey(dataType);
+        this.setCachedData(this.staticCache, key, data, this.CACHE_TTLS.static);
+    }
+
+    // ==================== CACHE MANAGEMENT ====================
 
     /**
      * Clear all caches
      */
     clearAll() {
-        const searchCount = this.searchCache.size;
-        const imdbCount = this.imdbCache.size;
+        const counts = {
+            search: this.searchCache.size,
+            imdb: this.imdbCache.size,
+            artwork: this.artworkCache.size,
+            translation: this.translationCache.size,
+            metadata: this.metadataCache.size,
+            season: this.seasonCache.size,
+            static: this.staticCache.size
+        };
         
         this.searchCache.clear();
         this.imdbCache.clear();
+        this.artworkCache.clear();
+        this.translationCache.clear();
+        this.metadataCache.clear();
+        this.seasonCache.clear();
+        this.staticCache.clear();
         
-        console.log(`🗑️ Cleared cache: ${searchCount} search entries, ${imdbCount} IMDB entries`);
+        console.log(`🗑️ Cleared all caches:`, counts);
     }
 
     /**
-     * Get cache statistics
+     * Clear specific cache type
+     */
+    clearCacheType(cacheType) {
+        const cacheMap = this.getCacheMap(cacheType);
+        if (cacheMap) {
+            const count = cacheMap.size;
+            cacheMap.clear();
+            console.log(`🗑️ Cleared ${cacheType} cache: ${count} entries`);
+        }
+    }
+
+    /**
+     * Get cache map by type (helper for cache management)
+     */
+    getCacheMap(cacheType) {
+        const cacheMappers = {
+            'search': this.searchCache,
+            'imdb': this.imdbCache,
+            'artwork': this.artworkCache,
+            'translation': this.translationCache,
+            'metadata': this.metadataCache,
+            'season': this.seasonCache,
+            'static': this.staticCache
+        };
+        return cacheMappers[cacheType];
+    }
+
+    /**
+     * Get comprehensive cache statistics
      */
     getStats() {
         return {
             searchEntries: this.searchCache.size,
             imdbEntries: this.imdbCache.size,
-            searchTTL: this.SEARCH_CACHE_TTL,
-            imdbTTL: this.IMDB_CACHE_TTL
+            artworkEntries: this.artworkCache.size,
+            translationEntries: this.translationCache.size,
+            metadataEntries: this.metadataCache.size,
+            seasonEntries: this.seasonCache.size,
+            staticEntries: this.staticCache.size,
+            totalEntries: this.searchCache.size + this.imdbCache.size + this.artworkCache.size + 
+                         this.translationCache.size + this.metadataCache.size + this.seasonCache.size + this.staticCache.size,
+            cacheTTLs: this.CACHE_TTLS
         };
     }
 
     /**
-     * Clean up expired entries
+     * Clean up expired entries from all caches
      */
     cleanup() {
         const now = Date.now();
-        let removedCount = 0;
+        let totalRemoved = 0;
+        
+        const cacheTypes = [
+            { name: 'search', map: this.searchCache },
+            { name: 'imdb', map: this.imdbCache },
+            { name: 'artwork', map: this.artworkCache },
+            { name: 'translation', map: this.translationCache },
+            { name: 'metadata', map: this.metadataCache },
+            { name: 'season', map: this.seasonCache },
+            { name: 'static', map: this.staticCache }
+        ];
 
-        // Clean search cache
-        for (const [key, entry] of this.searchCache.entries()) {
-            if (now >= entry.expiry) {
-                this.searchCache.delete(key);
-                removedCount++;
+        cacheTypes.forEach(cache => {
+            let removed = 0;
+            for (const [key, entry] of cache.map.entries()) {
+                if (now >= entry.expiry) {
+                    cache.map.delete(key);
+                    removed++;
+                }
             }
-        }
-
-        // Clean IMDB cache
-        for (const [key, entry] of this.imdbCache.entries()) {
-            if (now >= entry.expiry) {
-                this.imdbCache.delete(key);
-                removedCount++;
+            if (removed > 0) {
+                console.log(`🧹 Cleaned ${cache.name} cache: ${removed} expired entries`);
             }
-        }
+            totalRemoved += removed;
+        });
 
-        if (removedCount > 0) {
-            console.log(`🧹 Cleaned up ${removedCount} expired cache entries`);
+        if (totalRemoved > 0) {
+            console.log(`🧹 Total cleanup: ${totalRemoved} expired entries removed`);
         }
     }
 
@@ -152,7 +361,7 @@ class CacheService {
     startCleanupInterval() {
         // Clean up every 5 minutes
         setInterval(() => this.cleanup(), 5 * 60 * 1000);
-        console.log('🕐 Cache cleanup interval started (5 minutes)');
+        console.log('🕐 Enhanced cache cleanup interval started (5 minutes)');
     }
 }
 

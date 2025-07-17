@@ -3,6 +3,8 @@
  * Unified content fetching for movies and series with shared logic
  */
 
+const cacheService = require('../cacheService');
+
 class ContentFetcher {
     constructor(apiClient) {
         this.apiClient = apiClient;
@@ -15,6 +17,14 @@ class ContentFetcher {
         try {
             // Extract numeric ID from prefixed format (e.g., "movie-15778" -> "15778")
             const numericId = this.extractNumericId(contentId);
+            
+            // Check cache first
+            const cachedMetadata = cacheService.getMetadata(contentType, numericId);
+            if (cachedMetadata) {
+                console.log(`💾 Metadata cache HIT for ${contentType} ${numericId}`);
+                return cachedMetadata;
+            }
+
             const endpoint = contentType === 'movie' ? 'movies' : 'series';
             
             // Use Promise.allSettled to handle failures gracefully
@@ -27,9 +37,20 @@ class ContentFetcher {
             const basic = basicResult.status === 'fulfilled' ? basicResult.value : null;
             const extended = extendedResult.status === 'fulfilled' ? extendedResult.value : null;
             
-            return extended?.data || basic?.data || null;
+            const result = extended?.data || basic?.data || null;
+            
+            // Cache the metadata
+            cacheService.setMetadata(contentType, numericId, null, result);
+            
+            if (result) {
+                console.log(`📋 Cached metadata for ${contentType} ${numericId}`);
+            }
+            
+            return result;
         } catch (error) {
             console.error(`${contentType} details error for ID ${contentId}:`, error.message);
+            // Cache negative result to avoid repeated failures
+            cacheService.setMetadata(contentType, this.extractNumericId(contentId), null, null);
             return null;
         }
     }
@@ -65,15 +86,27 @@ class ContentFetcher {
      */
     async getSeriesSeasons(seriesId) {
         try {
+            // Check cache first
+            const cachedSeasons = cacheService.getSeasonData(seriesId);
+            if (cachedSeasons) {
+                console.log(`💾 Seasons cache HIT for series ${seriesId}`);
+                return cachedSeasons;
+            }
+
             const response = await this.apiClient.makeRequest(`/series/${seriesId}/extended`);
             const seasons = response?.data?.seasons || [];
             
+            // Cache the seasons data
+            cacheService.setSeasonData(seriesId, null, seasons);
+            
             if (seasons.length > 0) {
-                console.log(`📺 Got ${seasons.length} seasons for series ${seriesId}`);
+                console.log(`📺 Got ${seasons.length} seasons for series ${seriesId} (cached)`);
             }
             return seasons;
         } catch (error) {
             console.error(`Series seasons error for ID ${seriesId}:`, error.message);
+            // Cache negative result
+            cacheService.setSeasonData(seriesId, null, []);
             return [];
         }
     }
@@ -83,13 +116,26 @@ class ContentFetcher {
      */
     async getSeriesEpisodes(seriesId, seasonType = 'default') {
         try {
+            // Check cache first - cache by series and season type
+            const cacheKey = `episodes:${seasonType}`;
+            const cachedEpisodes = cacheService.getSeasonData(seriesId, cacheKey);
+            if (cachedEpisodes) {
+                console.log(`💾 Episodes cache HIT for series ${seriesId} (${seasonType})`);
+                return cachedEpisodes;
+            }
+
             const response = await this.apiClient.makeRequest(`/series/${seriesId}/episodes/${seasonType}`, { page: 0 });
             const episodes = response?.data?.episodes || [];
             
-            console.log(`📺 Got ${episodes.length} episodes for series ${seriesId}`);
+            // Cache the episodes data
+            cacheService.setSeasonData(seriesId, cacheKey, episodes);
+            
+            console.log(`📺 Got ${episodes.length} episodes for series ${seriesId} (${seasonType}) - cached`);
             return episodes;
         } catch (error) {
             console.error(`Series episodes error for ID ${seriesId}:`, error.message);
+            // Cache negative result
+            cacheService.setSeasonData(seriesId, `episodes:${seasonType}`, []);
             return [];
         }
     }

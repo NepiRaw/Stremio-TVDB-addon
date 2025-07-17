@@ -3,6 +3,8 @@
  * Handles language selection, mapping, and bulk translations
  */
 
+const cacheService = require('../cacheService');
+
 class TranslationService {
     constructor(apiClient) {
         this.apiClient = apiClient;
@@ -23,11 +25,29 @@ class TranslationService {
      */
     async getTranslation(entityType, entityId, tvdbLanguage) {
         try {
+            // Check cache first
+            const cachedTranslation = cacheService.getTranslation(entityType, entityId, tvdbLanguage, 'full');
+            if (cachedTranslation) {
+                console.log(`💾 Translation cache HIT for ${entityType} ${entityId} (${tvdbLanguage})`);
+                return cachedTranslation;
+            }
+
             const endpoint = `/${entityType}/${entityId}/translations/${tvdbLanguage}`;
             const response = await this.apiClient.makeRequest(endpoint);
-            return response?.data || null;
+            const translationData = response?.data || null;
+
+            // Cache the translation data
+            cacheService.setTranslation(entityType, entityId, tvdbLanguage, 'full', translationData);
+            
+            if (translationData) {
+                console.log(`🌍 Cached translation for ${entityType} ${entityId} (${tvdbLanguage})`);
+            }
+
+            return translationData;
         } catch (error) {
             console.error(`Translation fetch error for ${entityType} ${entityId} in ${tvdbLanguage}:`, error.message);
+            // Cache negative result to avoid repeated API calls
+            cacheService.setTranslation(entityType, entityId, tvdbLanguage, 'full', null);
             return null;
         }
     }
