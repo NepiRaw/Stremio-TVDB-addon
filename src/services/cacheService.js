@@ -17,14 +17,17 @@ class CacheService {
         
         // Cache TTL configurations (optimized for different data types)
         this.CACHE_TTLS = {
-            search: 30 * 60 * 1000,           // 30 minutes - searches are popular
-            imdb: 2 * 60 * 60 * 1000,         // 2 hours - IMDB IDs rarely change
-            artwork: 24 * 60 * 60 * 1000,     // 24 hours - artwork is static
-            translation: 6 * 60 * 60 * 1000,  // 6 hours - translations rarely update
-            metadata: 2 * 60 * 60 * 1000,     // 2 hours - basic metadata updates infrequently
-            season: 4 * 60 * 60 * 1000,       // 4 hours - episodes update occasionally
-            static: 7 * 24 * 60 * 60 * 1000   // 7 days - genres/types are very static
+            search: 2 * 60 * 60 * 1000,        // 2 hours - searches are popular, but results can change
+            imdb: 7 * 24 * 60 * 60 * 1000,     // 7 days - IMDB IDs + metadata rarely change
+            artwork: 14 * 24 * 60 * 60 * 1000, // 14 days - artwork is very static
+            translation: 3 * 24 * 60 * 60 * 1000, // 3 days - translations rarely update
+            metadata: 12 * 60 * 60 * 1000,     // 12 hours - basic metadata updates infrequently
+            season: 6 * 60 * 60 * 1000,        // 6 hours - episodes update occasionally
+            static: 30 * 24 * 60 * 60 * 1000   // 30 days - genres/types are very static
         };
+        
+        // Future /updates endpoint configuration
+        this.UPDATES_CHECK_INTERVAL = 12 * 60 * 60 * 1000; // 12 hours - adjustable sync interval
         
         // Start cleanup interval
         this.startCleanupInterval();
@@ -271,6 +274,43 @@ class CacheService {
         this.staticCache.clear();
         
         console.log(`🗑️ Cleared all caches:`, counts);
+    }
+
+    /**
+     * Clear cache entries by pattern (useful for selective invalidation)
+     */
+    clearByPattern(pattern) {
+        let totalRemoved = 0;
+        
+        const cacheTypes = [
+            { name: 'search', map: this.searchCache },
+            { name: 'imdb', map: this.imdbCache },
+            { name: 'artwork', map: this.artworkCache },
+            { name: 'translation', map: this.translationCache },
+            { name: 'metadata', map: this.metadataCache },
+            { name: 'season', map: this.seasonCache },
+            { name: 'static', map: this.staticCache }
+        ];
+
+        cacheTypes.forEach(cache => {
+            const keysToDelete = [];
+            for (const key of cache.map.keys()) {
+                if (key.startsWith(pattern)) {
+                    keysToDelete.push(key);
+                }
+            }
+            
+            keysToDelete.forEach(key => {
+                cache.map.delete(key);
+                totalRemoved++;
+            });
+            
+            if (keysToDelete.length > 0) {
+                console.log(`🧹 Cleared ${keysToDelete.length} entries from ${cache.name} cache matching pattern: ${pattern}`);
+            }
+        });
+
+        return totalRemoved;
     }
 
     /**

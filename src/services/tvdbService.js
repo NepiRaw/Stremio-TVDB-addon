@@ -4,6 +4,7 @@ const TranslationService = require('./tvdb/translationService');
 const ArtworkHandler = require('./tvdb/artworkHandler');
 const CatalogTransformer = require('./tvdb/catalogTransformer');
 const MetadataTransformer = require('./tvdb/metadataTransformer');
+const UpdatesService = require('./tvdb/updatesService');
 const cacheService = require('./cacheService');
 const { getEnhancedReleaseInfo } = require('../utils/theatricalStatus');
 
@@ -28,6 +29,33 @@ class TVDBService {
             this.translationService, 
             this.artworkHandler
         );
+        
+        // Initialize updates service for intelligent cache invalidation
+        this.updatesService = new UpdatesService(this);
+    }
+
+    /**
+     * Start the TVDB service including updates monitoring
+     */
+    async start() {
+        console.log('🚀 Starting TVDB service...');
+        
+        // Ensure authentication
+        await this.ensureValidToken();
+        
+        // Start updates monitoring
+        this.updatesService.start();
+        
+        console.log('✅ TVDB service started with updates monitoring');
+    }
+
+    /**
+     * Stop the TVDB service
+     */
+    stop() {
+        console.log('🛑 Stopping TVDB service...');
+        this.updatesService.stop();
+        console.log('✅ TVDB service stopped');
     }
 
     /**
