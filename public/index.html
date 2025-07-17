@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>TVDB Catalog - Stremio Addon</title>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         * {
             margin: 0;
@@ -12,8 +14,9 @@
         }
 
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            font-family: 'Roboto', sans-serif;
+            background: #1A2526;
+            color: #E0E0E0;
             min-height: 100vh;
             display: flex;
             align-items: center;
@@ -22,14 +25,13 @@
         }
 
         .container {
-            background: rgba(255, 255, 255, 0.95);
+            background: #222D2E;
             border-radius: 20px;
             padding: 40px;
-            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
             text-align: center;
             max-width: 600px;
             width: 100%;
-            backdrop-filter: blur(10px);
             animation: slideUp 0.6s ease-out;
         }
 
@@ -51,37 +53,41 @@
         }
 
         h1 {
-            color: #333;
+            color: #fff;
             font-size: 2.5rem;
             margin-bottom: 10px;
             font-weight: 700;
         }
 
         .version {
-            color: #666;
+            color: #A0A0A0;
             font-size: 1rem;
             margin-bottom: 30px;
             font-weight: 300;
         }
 
         .description {
-            color: #555;
+            color: #D0D0D0;
             font-size: 1.2rem;
             line-height: 1.6;
             margin-bottom: 40px;
         }
 
         .features {
-            background: #f8f9fa;
+            background: #2A3536;
             border-radius: 15px;
             padding: 30px;
             margin-bottom: 40px;
         }
 
         .features h3 {
-            color: #333;
+            color: #fff;
             margin-bottom: 20px;
             font-size: 1.3rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
         }
 
         .feature-list {
@@ -92,10 +98,10 @@
         }
 
         .feature-item {
-            background: white;
+            background: #323D3E;
             padding: 20px;
             border-radius: 10px;
-            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
             transition: transform 0.3s ease;
         }
 
@@ -107,39 +113,20 @@
             font-size: 2rem;
             margin-bottom: 10px;
             display: block;
+            color: #00A86B;
         }
 
         .feature-text {
-            color: #333;
+            color: #fff;
             font-weight: 600;
-        }
-
-        .install-button {
-            background: linear-gradient(45deg, #667eea, #764ba2);
-            color: white;
-            border: none;
-            padding: 15px 40px;
-            font-size: 1.2rem;
-            font-weight: 600;
-            border-radius: 50px;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            text-decoration: none;
-            display: inline-block;
-            margin-top: 20px;
-        }
-
-        .install-button:hover {
-            transform: translateY(-3px);
-            box-shadow: 0 10px 30px rgba(102, 126, 234, 0.4);
         }
 
         .config-section {
             margin: 30px 0;
             padding: 25px;
-            background: rgba(255, 255, 255, 0.8);
+            background: #2A3536;
             border-radius: 15px;
-            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
         }
 
         .config-group {
@@ -150,14 +137,15 @@
             display: block;
             font-weight: 600;
             font-size: 16px;
-            color: #333;
+            color: #fff;
             margin-bottom: 8px;
+            display: flex;
             align-items: center;
+            gap: 8px;
         }
 
         .info-tooltip {
-            margin-left: 8px;
-            color: #667eea;
+            color: #00A86B;
             cursor: help;
             font-size: 14px;
             font-weight: normal;
@@ -166,27 +154,157 @@
         .language-select {
             width: 100%;
             padding: 12px 16px;
-            border: 2px solid #e1e5e9;
+            border: 2px solid #555;
             border-radius: 10px;
             font-size: 16px;
-            background: white;
+            background: #323D3E;
+            color: #E0E0E0;
             transition: all 0.3s ease;
             cursor: pointer;
         }
 
         .language-select:focus {
             outline: none;
-            border-color: #667eea;
-            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+            border-color: #00A86B;
+            box-shadow: 0 0 0 3px rgba(0, 168, 107, 0.1);
         }
 
         .language-select:hover {
-            border-color: #667eea;
+            border-color: #00A86B;
+        }
+
+        .install-container {
+            display: inline-flex;
+            position: relative;
+            margin-top: 20px;
+            background: linear-gradient(45deg, #1A3536, #2A4A4B);
+            border-radius: 50px;
+        }
+
+        .install-button {
+            background: transparent;
+            color: #E0E0E0;
+            border: none;
+            padding: 16px 45px;
+            font-size: 1.2rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            position: relative;
+            z-index: 1;
+            border-radius: 50px 0 0 50px;
+        }
+
+        .install-button.success {
+            background: #00A86B;
+            pointer-events: none;
+        }
+
+        .install-button:hover {
+            background: rgba(0, 168, 107, 0.2);
+        }
+
+        .dropdown-toggle {
+            background: rgba(0, 0, 0, 0.2);
+            color: #E0E0E0;
+            border: none;
+            padding: 0 20px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            border-left: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex;
+            align-items: center;
+            border-radius: 0 50px 50px 0;
+        }
+
+        .dropdown-toggle:hover {
+            background: rgba(42, 74, 75, 0.3);
+        }
+
+        .dropdown-menu {
+            position: absolute;
+            top: 100%;
+            right: 0;
+            background: #222D2E;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+            width: 240px;
+            z-index: 10;
+            display: none;
+            margin-top: 5px;
+            border: none;
+        }
+
+        .dropdown-menu::before {
+            content: '';
+            position: absolute;
+            top: -10px;
+            right: 20px;
+            width: 0;
+            height: 0;
+            border-left: 10px solid transparent;
+            border-right: 10px solid transparent;
+            border-bottom: 10px solid #222D2E;
+        }
+
+        .dropdown-menu.show {
+            display: block;
+            animation: fadeIn 0.3s ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .dropdown-item {
+            padding: 15px 20px;
+            text-align: left;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            color: #E0E0E0;
+            text-decoration: none;
+            transition: all 0.2s ease;
+        }
+
+        .dropdown-item:not(:last-child) {
+            border-bottom: 1px solid rgba(0, 168, 107, 0.15);
+        }
+
+        .dropdown-item:hover {
+            background: rgba(0, 168, 107, 0.1);
+            padding-left: 25px;
+            color: #00A86B;
+        }
+
+        .notification {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: #00A86B;
+            color: white;
+            padding: 15px 25px;
+            border-radius: 12px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            z-index: 1000;
+            transform: translateX(150%);
+            transition: transform 0.3s ease;
+        }
+
+        .notification.show {
+            transform: translateX(0);
         }
 
         .powered-by {
             margin-top: 30px;
-            color: #666;
+            color: #A0A0A0;
             font-size: 0.9rem;
         }
 
@@ -199,21 +317,30 @@
         }
 
         .badge {
-            background: #333;
-            color: white;
+            background: #1A3536;
+            color: #E0E0E0;
             padding: 8px 16px;
             border-radius: 20px;
             font-size: 0.8rem;
             font-weight: 500;
         }
 
+        .badge:hover {
+            background: #2A4A4B;
+        }
+
         @media (max-width: 768px) {
             .container {
-                padding: 30px 20px;
+                padding: 20px;
+                margin: 10px;
             }
 
             h1 {
                 font-size: 2rem;
+            }
+
+            .description {
+                font-size: 1.1rem;
             }
 
             .feature-list {
@@ -221,9 +348,58 @@
                 gap: 15px;
             }
 
+            .install-container {
+                flex-direction: column;
+                border-radius: 12px;
+                width: 100%;
+            }
+
+            .install-button {
+                padding: 14px;
+                justify-content: center;
+                border-radius: 12px 12px 0 0;
+                font-size: 1.1rem;
+            }
+
+            .dropdown-toggle {
+                padding: 12px;
+                border-left: none;
+                border-top: 1px solid rgba(255, 255, 255, 0.1);
+                border-radius: 0 0 12px 12px;
+            }
+
+            .dropdown-menu {
+                width: 100%;
+                right: 0;
+            }
+
             .api-badges {
                 flex-direction: column;
                 align-items: center;
+            }
+        }
+
+        @media (max-width: 480px) {
+            h1 {
+                font-size: 1.8rem;
+            }
+
+            .description {
+                font-size: 1rem;
+            }
+
+            .install-button {
+                padding: 12px;
+                font-size: 1rem;
+            }
+
+            .dropdown-menu {
+                width: 100%;
+            }
+
+            .dropdown-item {
+                font-size: 0.9rem;
+                padding: 12px 15px;
             }
         }
     </style>
@@ -240,18 +416,18 @@
         </div>
 
         <div class="features">
-            <h3>🎬 What You'll Get</h3>
+            <h3><i class="fas fa-star"></i> What You'll Get</h3>
             <ul class="feature-list">
                 <li class="feature-item">
-                    <span class="feature-icon">📺</span>
+                    <i class="fas fa-tv feature-icon"></i>
                     <span class="feature-text">TV Series</span>
                 </li>
                 <li class="feature-item">
-                    <span class="feature-icon">🎬</span>
+                    <i class="fas fa-film feature-icon"></i>
                     <span class="feature-text">Movies</span>
                 </li>
                 <li class="feature-item">
-                    <span class="feature-icon">🎌</span>
+                    <i class="fas fa-dragon feature-icon"></i>
                     <span class="feature-text">Anime</span>
                 </li>
             </ul>
@@ -260,8 +436,10 @@
         <div class="config-section">
             <div class="config-group">
                 <label for="languageSelect" class="config-label">
-                    🌐 Preferred Language
-                    <span class="info-tooltip" title="Choose your preferred language for metadata. If not available, will fallback to English, then first available language.">ⓘ</span>
+                    <i class="fas fa-globe"></i> Preferred Language
+                    <span class="info-tooltip" title="Choose your preferred language for metadata. If not available, will fallback to English, then first available language.">
+                        <i class="fas fa-info-circle"></i>
+                    </span>
                 </label>
                 <select id="languageSelect" class="language-select">
                     <option value="eng" selected>English - Default</option>
@@ -279,9 +457,25 @@
             </div>
         </div>
 
-        <a href="#" id="installButton" class="install-button">
-            📲 Install Addon
-        </a>
+        <div class="install-container">
+            <button id="mainInstallButton" class="install-button">
+                <i class="fas fa-download"></i> Install Addon
+            </button>
+            <button class="dropdown-toggle" id="dropdownToggle">
+                <i class="fas fa-chevron-down"></i>
+            </button>
+            <div class="dropdown-menu" id="dropdownMenu">
+                <a href="#" class="dropdown-item" data-action="install">
+                    <i class="fas fa-desktop"></i> Install for Desktop
+                </a>
+                <a href="#" class="dropdown-item" data-action="web">
+                    <i class="fas fa-window-maximize"></i> Install for Web
+                </a>
+                <a href="#" class="dropdown-item" data-action="copy">
+                    <i class="fas fa-copy"></i> Copy Manifest URL
+                </a>
+            </div>
+        </div>
 
         <div class="powered-by">
             <div>Powered by</div>
@@ -291,58 +485,128 @@
         </div>
     </div>
 
-    <script>
-        document.getElementById('installButton').addEventListener('click', function(e) {
-            e.preventDefault();
-            
-            // Get selected language
-            const selectedLanguage = document.getElementById('languageSelect').value;
-            
-            // Create the manifest URL with language parameter
-            const manifestUrlTemplate = '{{MANIFEST_URL}}';
-            const manifestUrl = manifestUrlTemplate.replace('{{LANG}}', selectedLanguage);
-            
-            // Create the correct Stremio install URL format
-            const manifestHost = manifestUrl.replace(/^https?:\/\//, '');
-            const stremioUrl = `stremio://${manifestHost}`;
-            
-            // Show loading state
-            this.style.background = 'linear-gradient(45deg, #4CAF50, #45a049)';
-            this.textContent = 'Opening Stremio...';
-            
-            // Try to open Stremio directly
-            window.location.href = stremioUrl;
-            
-            // Fallback: Show manual installation instructions
-            setTimeout(() => {
-                alert(`If Stremio didn't open automatically, copy this URL and paste it in Stremio's addon installation:\n\n${manifestUrl}`);
-                
-                // Reset button
-                this.style.background = 'linear-gradient(45deg, #667eea, #764ba2)';
-                this.textContent = '📲 Install Addon';
-            }, 2000);
-        });
+    <div class="notification" id="notification">
+        <i class="fas fa-check-circle"></i>
+        <span id="notificationText">URL copied to clipboard!</span>
+    </div>
 
-        // Load saved language preference
+    <script>
         document.addEventListener('DOMContentLoaded', function() {
+            const mainInstallButton = document.getElementById('mainInstallButton');
+            const dropdownToggle = document.getElementById('dropdownToggle');
+            const dropdownMenu = document.getElementById('dropdownMenu');
+            const notification = document.getElementById('notification');
+            const notificationText = document.getElementById('notificationText');
+            const languageSelect = document.getElementById('languageSelect');
             const container = document.querySelector('.container');
+
+            // Animation on load
             container.style.opacity = '0';
             container.style.transform = 'translateY(30px)';
-            
-            // Load saved language preference
-            const savedLanguage = localStorage.getItem('tvdb-addon-language') || 'eng';
-            document.getElementById('languageSelect').value = savedLanguage;
-            
-            // Save language preference when changed
-            document.getElementById('languageSelect').addEventListener('change', function() {
-                localStorage.setItem('tvdb-addon-language', this.value);
-            });
-            
             setTimeout(() => {
                 container.style.transition = 'all 0.6s ease';
                 container.style.opacity = '1';
                 container.style.transform = 'translateY(0)';
             }, 100);
+
+            // Function to get manifest URL
+            function getManifestUrl() {
+                const selectedLanguage = languageSelect.value;
+                const manifestUrlTemplate = '{{MANIFEST_URL}}';
+                return manifestUrlTemplate.replace('{{LANG}}', selectedLanguage);
+            }
+
+            // Toggle dropdown
+            dropdownToggle.addEventListener('click', function(e) {
+                console.log('Dropdown toggle clicked');
+                e.preventDefault();
+                e.stopPropagation();
+                dropdownMenu.classList.toggle('show');
+            });
+
+            // Prevent dropdown from closing when clicking inside
+            dropdownMenu.addEventListener('click', function(e) {
+                e.stopPropagation();
+            });
+
+            // Close dropdown when clicking outside
+            document.addEventListener('click', function(e) {
+                if (!dropdownMenu.contains(e.target) && !dropdownToggle.contains(e.target) && !mainInstallButton.contains(e.target)) {
+                    dropdownMenu.classList.remove('show');
+                }
+            });
+
+            // Handle main button click
+            mainInstallButton.addEventListener('click', function(e) {
+                e.preventDefault();
+                handleInstallAction('install');
+            });
+
+            // Handle dropdown item clicks
+            document.querySelectorAll('.dropdown-item').forEach(item => {
+                item.addEventListener('click', function(e) {
+                    console.log('Dropdown item clicked:', this.getAttribute('data-action'));
+                    e.preventDefault();
+                    const action = this.getAttribute('data-action');
+                    handleInstallAction(action);
+                    dropdownMenu.classList.remove('show');
+                });
+            });
+
+            // Handle installation actions
+            function handleInstallAction(action) {
+                const manifestUrl = getManifestUrl();
+                const manifestHost = manifestUrl.replace(/^https?:\/\//, '');
+
+                switch (action) {
+                    case 'install':
+                        updateButtonState('<i class="fas fa-spinner fa-spin"></i> Opening Stremio...', true);
+                        window.location.href = `stremio://${manifestHost}`;
+                        setTimeout(() => {
+                            updateButtonState('<i class="fas fa-download"></i> Install Addon', false);
+                        }, 3000);
+                        break;
+                    case 'web':
+                        updateButtonState('<i class="fas fa-spinner fa-spin"></i> Opening Web...', true);
+                        window.open(`https://web.strem.io/#/?addon=${encodeURIComponent(manifestUrl)}`, '_blank');
+                        setTimeout(() => {
+                            updateButtonState('<i class="fas fa-download"></i> Install Addon', false);
+                        }, 3000);
+                        break;
+                    case 'copy':
+                        navigator.clipboard.writeText(manifestUrl);
+                        showNotification('Manifest URL copied to clipboard!');
+                        break;
+                }
+            }
+
+            // Update button text and state
+            function updateButtonState(text, isSuccess) {
+                mainInstallButton.innerHTML = text;
+                if (isSuccess) {
+                    mainInstallButton.classList.add('success');
+                } else {
+                    mainInstallButton.classList.remove('success');
+                }
+            }
+
+            // Show notification
+            function showNotification(text) {
+                notificationText.textContent = text;
+                notification.classList.add('show');
+                setTimeout(() => {
+                    notification.classList.remove('show');
+                }, 3000);
+            }
+
+            // Load saved language preference
+            const savedLanguage = localStorage.getItem('tvdb-addon-language') || 'eng';
+            languageSelect.value = savedLanguage;
+
+            // Save language preference when changed
+            languageSelect.addEventListener('change', function() {
+                localStorage.setItem('tvdb-addon-language', this.value);
+            });
         });
     </script>
 </body>
