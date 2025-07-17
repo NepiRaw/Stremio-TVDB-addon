@@ -76,6 +76,112 @@
   }
   ```
 
+## Admin Endpoints (Secured)
+
+⚠️ **Security Notice**: All admin endpoints require authentication and are rate-limited.
+
+### Prerequisites
+- Set `ADMIN_API_KEY` environment variable
+- Include admin key in requests via header or query parameter
+
+### Authentication Methods
+1. **Header** (Recommended): `X-Admin-Key: your-secure-key`
+2. **Query Parameter**: `?key=your-secure-key`
+
+### Rate Limiting
+- **Limit**: 10 requests per minute per IP
+- **Response**: 429 Too Many Requests when exceeded
+
+### Admin Endpoints
+
+#### Cache Statistics
+- **URL**: `/admin/cache/stats`
+- **Method**: GET
+- **Authentication**: Required
+- **Description**: Comprehensive cache statistics
+- **Response**:
+  ```json
+  {
+    "success": true,
+    "stats": {
+      "searchEntries": 25,
+      "imdbEntries": 150,
+      "artworkEntries": 89,
+      "translationEntries": 42,
+      "metadataEntries": 187,
+      "seasonEntries": 34,
+      "staticEntries": 12,
+      "totalEntries": 539,
+      "cacheTTLs": {
+        "search": 7200000,
+        "imdb": 604800000,
+        "artwork": 1209600000,
+        "translation": 259200000,
+        "metadata": 43200000,
+        "season": 21600000,
+        "static": 2592000000
+      }
+    }
+  }
+  ```
+
+#### Updates Service Status
+- **URL**: `/admin/updates/status`
+- **Method**: GET
+- **Authentication**: Required
+- **Description**: TVDB updates service status and timing
+- **Response**:
+  ```json
+  {
+    "success": true,
+    "status": {
+      "isRunning": true,
+      "lastUpdateTimestamp": 1752718725531,
+      "updateInterval": 43200000,
+      "nextCheckIn": 43164756
+    }
+  }
+  ```
+
+#### Manual Updates Trigger
+- **URL**: `/admin/updates/trigger`
+- **Method**: POST
+- **Authentication**: Required
+- **Description**: Manually trigger TVDB updates check
+- **Response**:
+  ```json
+  {
+    "success": true,
+    "message": "Manual updates check triggered"
+  }
+  ```
+
+### Admin Error Responses
+
+#### 401 Unauthorized
+```json
+{
+  "success": false,
+  "error": "Unauthorized - Invalid admin key"
+}
+```
+
+#### 429 Too Many Requests
+```json
+{
+  "success": false,
+  "error": "Rate limit exceeded - max 10 requests per minute"
+}
+```
+
+#### 503 Service Unavailable
+```json
+{
+  "success": false,
+  "error": "Admin endpoints disabled - ADMIN_API_KEY not configured"
+}
+```
+
 ## Error Responses
 
 ### 400 Bad Request
@@ -100,6 +206,25 @@
 ```
 
 ## TVDB API Integration
+
+### Enhanced Caching System
+- **7-tier cache architecture** for optimal performance
+- **TTL-based expiration** with different durations per data type:
+  - Search: 2 hours
+  - IMDB: 7 days  
+  - Artwork: 14 days
+  - Translation: 3 days
+  - Metadata: 12 hours
+  - Season: 6 hours
+  - Static: 30 days
+- **Automatic cleanup** every 5 minutes
+- **64% performance improvement** (888ms → 315ms response times)
+
+### Intelligent Updates System
+- **TVDB /updates endpoint** polling every 12 hours
+- **Selective cache invalidation** based on TVDB changes
+- **Pattern-based cache clearing** for precise updates
+- **Background processing** with automatic recovery
 
 ### Authentication
 - Uses JWT tokens from TVDB API v4

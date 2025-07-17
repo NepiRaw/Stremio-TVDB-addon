@@ -40,8 +40,65 @@ app.get('/health', (req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// Admin/Debug routes for updates service
-app.get('/admin/updates/status', (req, res) => {
+// Admin authentication middleware
+const adminAuth = (req, res, next) => {
+    const adminKey = process.env.ADMIN_API_KEY;
+    
+    // If no admin key configured, disable admin endpoints
+    if (!adminKey) {
+        return res.status(503).json({ 
+            success: false, 
+            error: 'Admin endpoints disabled - ADMIN_API_KEY not configured' 
+        });
+    }
+    
+    const providedKey = req.headers['x-admin-key'] || req.query.key;
+    
+    if (!providedKey || providedKey !== adminKey) {
+        return res.status(401).json({ 
+            success: false, 
+            error: 'Unauthorized - Invalid admin key' 
+        });
+    }
+    
+    next();
+};
+
+// Rate limiting for admin endpoints
+const adminRateLimit = new Map();
+const ADMIN_RATE_LIMIT = 10; // Max 10 requests per minute
+const RATE_WINDOW = 60 * 1000; // 1 minute
+
+const rateLimitMiddleware = (req, res, next) => {
+    const clientIP = req.ip || req.connection.remoteAddress;
+    const now = Date.now();
+    
+    if (!adminRateLimit.has(clientIP)) {
+        adminRateLimit.set(clientIP, { count: 1, resetTime: now + RATE_WINDOW });
+        return next();
+    }
+    
+    const clientData = adminRateLimit.get(clientIP);
+    
+    if (now > clientData.resetTime) {
+        // Reset the counter
+        adminRateLimit.set(clientIP, { count: 1, resetTime: now + RATE_WINDOW });
+        return next();
+    }
+    
+    if (clientData.count >= ADMIN_RATE_LIMIT) {
+        return res.status(429).json({
+            success: false,
+            error: 'Rate limit exceeded - max 10 requests per minute'
+        });
+    }
+    
+    clientData.count++;
+    next();
+};
+
+// Admin/Debug routes for updates service (secured)
+app.get('/admin/updates/status', adminAuth, rateLimitMiddleware, (req, res) => {
     try {
         const status = tvdbService.updatesService.getStatus();
         res.json({
@@ -56,7 +113,7 @@ app.get('/admin/updates/status', (req, res) => {
     }
 });
 
-app.post('/admin/updates/trigger', async (req, res) => {
+app.post('/admin/updates/trigger', adminAuth, rateLimitMiddleware, async (req, res) => {
     try {
         await tvdbService.updatesService.triggerManualCheck();
         res.json({ 
@@ -71,7 +128,7 @@ app.post('/admin/updates/trigger', async (req, res) => {
     }
 });
 
-app.get('/admin/cache/stats', (req, res) => {
+app.get('/admin/cache/stats', adminAuth, rateLimitMiddleware, (req, res) => {
     try {
         const cacheService = require('./src/services/cacheService');
         const stats = cacheService.getStats();

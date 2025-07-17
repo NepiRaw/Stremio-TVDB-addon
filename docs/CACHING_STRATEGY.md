@@ -92,27 +92,61 @@ this.CACHE_TTLS = {
 };
 ```
 
-## Admin/Monitoring Endpoints
+## Admin/Monitoring Endpoints (Secured)
 
-The system includes several admin endpoints for monitoring and managing the updates service:
+**⚠️ Security Note**: Admin endpoints require authentication and are rate-limited for security.
 
-### Updates Status
+### Prerequisites
+```bash
+# Set admin API key in environment
+ADMIN_API_KEY=your-secure-random-key-here
+```
+
+### Authentication Methods
+1. **Header Authentication** (Recommended):
+   ```bash
+   curl -H "X-Admin-Key: your-secure-key" http://localhost:3000/admin/updates/status
+   ```
+
+2. **Query Parameter** (Less secure):
+   ```bash
+   curl "http://localhost:3000/admin/updates/status?key=your-secure-key"
+   ```
+
+### Rate Limiting
+- **Limit**: 10 requests per minute per IP
+- **Status**: 429 Too Many Requests when exceeded
+
+### Endpoints
+
+#### Updates Status
 ```bash
 GET /admin/updates/status
+Headers: X-Admin-Key: your-secure-key
 ```
 Returns current status of the updates service including last check time and next scheduled check.
 
-### Manual Updates Trigger
+#### Manual Updates Trigger
 ```bash
 POST /admin/updates/trigger
+Headers: X-Admin-Key: your-secure-key
 ```
 Manually triggers an updates check for testing or immediate synchronization.
 
-### Cache Statistics
+#### Cache Statistics
 ```bash
 GET /admin/cache/stats
+Headers: X-Admin-Key: your-secure-key
 ```
 Returns comprehensive cache statistics including entry counts and TTL configurations.
+
+### Security Features
+
+- **API Key Authentication**: Prevents unauthorized access
+- **Rate Limiting**: 10 requests/minute prevents abuse
+- **Environment Configuration**: Admin key from environment variables
+- **Automatic Disable**: Endpoints disabled if no admin key configured
+- **IP-based Tracking**: Rate limiting per client IP address
 
 ## Monitoring
 
