@@ -299,10 +299,12 @@
             const selectedLanguage = document.getElementById('languageSelect').value;
             
             // Create the manifest URL with language parameter
-            const manifestUrl = `${window.location.origin}/${selectedLanguage}/manifest.json`;
+            const manifestUrlTemplate = '{{MANIFEST_URL}}';
+            const manifestUrl = manifestUrlTemplate.replace('{{LANG}}', selectedLanguage);
             
             // Create the correct Stremio install URL format
-            const stremioUrl = `stremio://${window.location.host}/${selectedLanguage}/manifest.json`;
+            const manifestHost = manifestUrl.replace(/^https?:\/\//, '');
+            const stremioUrl = `stremio://${manifestHost}`;
             
             // Show loading state
             this.style.background = 'linear-gradient(45deg, #4CAF50, #45a049)';

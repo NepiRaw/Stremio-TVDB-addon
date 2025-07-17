@@ -1,9 +1,10 @@
 const packageJson = require('../../package.json');
+const { buildCatalogUrl, buildMetaUrl } = require('./urlBuilder');
 
 /**
  * Generate Stremio addon manifest with TVDB language support
  */
-function getManifest(tvdbLanguage = 'eng') {
+function getManifest(tvdbLanguage = 'eng', req) {
     // Map TVDB language codes to human-readable names
     const languageNames = {
         'eng': 'English',

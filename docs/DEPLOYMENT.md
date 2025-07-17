@@ -1,4 +1,81 @@
-# Deployment Instructions
+# Production Deployment Guide
+
+## Overview
+
+This guide covers deploying the TVDB Stremio Addon in production behind a reverse proxy (Nginx), specifically for your setup:
+
+```
+Cloudflare → VPS → Nginx → Multiple Addons
+                         ├── Frontend (xyz.com)
+                         ├── Debrid Addon (xyz.com/stremio-addon/DebridSearch-addon)
+                         └── TVDB Addon (xyz.com/stremio-addon/TVDB-addon)
+```
+
+## Environment Configuration
+
+### 1. Set BASE_URL for Production
+
+Create or update your `.env` file:
+
+```bash
+# Production configuration
+BASE_URL=https://xyz.com/stremio-addon/TVDB-addon
+PORT=3000
+TVDB_API_KEY=your_actual_api_key
+ADMIN_API_KEY=your_secure_admin_key
+
+# Optional: MongoDB for persistent caching
+MONGODB_URI=mongodb://localhost:27017/stremio-tvdb-cache
+```
+
+### 2. Development Configuration
+
+For local development:
+
+```bash
+# Development configuration  
+BASE_URL=http://localhost
+PORT=3000
+# Port will be automatically added: http://localhost:3000
+```
+
+### 2. Alternative: Auto-Detection (Recommended)
+
+Leave `BASE_URL` empty to auto-detect from request headers:
+
+```bash
+# Auto-detection mode (recommended)
+BASE_URL=
+PORT=3000
+```
+
+The addon will automatically detect the correct URLs from request headers (X-Forwarded-* headers from Nginx).
+
+### 3. Different Deployment Scenarios
+
+**Scenario A: Subpath deployment (your setup)**
+```bash
+BASE_URL=https://xyz.com/stremio-addon/TVDB-addon
+# Results in: https://xyz.com/stremio-addon/TVDB-addon/manifest.json
+```
+
+**Scenario B: Subdomain deployment**
+```bash
+BASE_URL=https://tvdb-addon.xyz.com
+# Results in: https://tvdb-addon.xyz.com/manifest.json
+```
+
+**Scenario C: Direct domain**
+```bash
+BASE_URL=https://tvdb.xyz.com
+# Results in: https://tvdb.xyz.com/manifest.json
+```
+
+**Scenario D: Development**
+```bash
+BASE_URL=http://localhost
+# Results in: http://localhost:3000/manifest.json (port auto-added)
+```
 
 ## Local Development
 

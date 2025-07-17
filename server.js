@@ -138,10 +138,9 @@ app.post('/admin/updates/trigger', adminAuth, rateLimitMiddleware, async (req, r
     }
 });
 
-app.get('/admin/cache/stats', adminAuth, rateLimitMiddleware, (req, res) => {
+app.get('/admin/cache/stats', adminAuth, rateLimitMiddleware, async (req, res) => {
     try {
-        const cacheService = require('./src/services/cacheService');
-        const stats = cacheService.getStats();
+        const stats = await cacheService.getStats();
         res.json({
             success: true,
             stats: stats
@@ -164,8 +163,23 @@ app.use('*', (req, res) => {
 
 const server = app.listen(PORT, async () => {
     console.log(`🚀 TVDB Stremio Addon server running on port ${PORT}`);
-    console.log(`📱 Installation page: http://localhost:${PORT}`);
-    console.log(`📋 Manifest: http://localhost:${PORT}/manifest.json`);
+    
+    // Show deployment information
+    const baseUrl = process.env.BASE_URL;
+    if (baseUrl && baseUrl.trim()) {
+        // Use the actual URL builder logic to get correct URL with port
+        const mockReq = { protocol: 'http', get: () => `localhost:${PORT}` };
+        const { getBaseUrl } = require('./src/utils/urlBuilder');
+        const actualBaseUrl = getBaseUrl(mockReq);
+        
+        console.log(`📱 Installation page: ${actualBaseUrl}/`);
+        console.log(`📋 Manifest: ${actualBaseUrl}/manifest.json`);
+        console.log(`🌐 Production deployment detected`);
+    } else {
+        console.log(`📱 Installation page: http://localhost:${PORT}`);
+        console.log(`📋 Manifest: http://localhost:${PORT}/manifest.json`);
+        console.log(`🔧 Development mode (auto-detect URLs from requests)`);
+    }
     
     // Start TVDB service with updates monitoring
     try {

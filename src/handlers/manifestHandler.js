@@ -8,7 +8,7 @@ async function manifestHandler(req, res) {
         // Extract TVDB language code from URL parameter (e.g., /fra/manifest.json)
         const tvdbLanguage = req.params.language || 'eng';
         
-        const manifest = getManifest(tvdbLanguage);
+        const manifest = getManifest(tvdbLanguage, req);
         res.json(manifest);
     } catch (error) {
         console.error('Error serving manifest:', error);
