@@ -3,11 +3,12 @@
  * Handles poster, background, and logo selection for movies and series
  */
 
-const cacheService = require('../cacheService');
+// Note: This will be replaced by dependency injection in the constructor
 
 class ArtworkHandler {
-    constructor(apiClient) {
+    constructor(apiClient, cacheService) {
         this.apiClient = apiClient;
+        this.cacheService = cacheService;
     }
 
     /**
@@ -17,7 +18,7 @@ class ArtworkHandler {
         try {
             // Check cache first
             const cacheKey = `${entityType}:${entityId}:${language}`;
-            const cachedArtwork = cacheService.getArtwork(entityType, entityId, language);
+            const cachedArtwork = await this.cacheService.getArtwork(entityType, entityId, language);
             if (cachedArtwork) {
                 console.log(`💾 Artwork cache HIT for ${entityType} ${entityId}`);
                 return cachedArtwork;
@@ -27,7 +28,7 @@ class ArtworkHandler {
                 // Movies don't have artwork endpoint in TVDB API v4, fall back to basic sources
                 const result = { poster: null, background: null, logo: null };
                 // Cache the negative result to avoid repeated API calls
-                cacheService.setArtwork(entityType, entityId, language, result);
+                await this.cacheService.setArtwork(entityType, entityId, language, result);
                 return result;
             }
             
@@ -41,7 +42,7 @@ class ArtworkHandler {
             if (artworks.length === 0) {
                 const result = { poster: null, background: null, logo: null };
                 // Cache the negative result
-                cacheService.setArtwork(entityType, entityId, language, result);
+                await this.cacheService.setArtwork(entityType, entityId, language, result);
                 return result;
             }
             
@@ -51,7 +52,7 @@ class ArtworkHandler {
             result.logo = this.selectBestClearlogo(artworks, language);
             
             // Cache the artwork data
-            cacheService.setArtwork(entityType, entityId, language, result);
+            await this.cacheService.setArtwork(entityType, entityId, language, result);
             console.log(`🎨 Cached artwork for ${entityType} ${entityId}`);
             
             return result;
@@ -59,7 +60,7 @@ class ArtworkHandler {
             console.error(`❌ Artwork fetch error for ${entityType} ${entityId}:`, error.message);
             // Cache negative result to avoid repeated failures
             const result = { poster: null, background: null, logo: null };
-            cacheService.setArtwork(entityType, entityId, language, result);
+            await this.cacheService.setArtwork(entityType, entityId, language, result);
             return result;
         }
     }
@@ -103,19 +104,22 @@ class ArtworkHandler {
         // Step 1: Try preferred language
         const preferredLangPosters = posters.filter(art => art.language === preferredLanguage);
         if (preferredLangPosters.length > 0) {
-            return this.selectBestFromArray(preferredLangPosters).image;
+            const best = this.selectBestFromArray(preferredLangPosters);
+            return best ? best.image : null;
         }
         
         // Step 2: Try English if preferred wasn't English
         if (preferredLanguage !== 'eng') {
             const englishPosters = posters.filter(art => art.language === 'eng');
             if (englishPosters.length > 0) {
-                return this.selectBestFromArray(englishPosters).image;
+                const best = this.selectBestFromArray(englishPosters);
+                return best ? best.image : null;
             }
         }
         
         // Step 3: Try any language available (highest score/resolution)
-        return this.selectBestFromArray(posters).image;
+        const best = this.selectBestFromArray(posters);
+        return best ? best.image : null;
     }
 
     /**
@@ -164,19 +168,22 @@ class ArtworkHandler {
         // Step 1: Try preferred language
         const preferredLangLogos = clearlogos.filter(art => art.language === preferredLanguage);
         if (preferredLangLogos.length > 0) {
-            return this.selectBestFromArray(preferredLangLogos).image;
+            const best = this.selectBestFromArray(preferredLangLogos);
+            return best ? best.image : null;
         }
         
         // Step 2: Try English if preferred wasn't English
         if (preferredLanguage !== 'eng') {
             const englishLogos = clearlogos.filter(art => art.language === 'eng');
             if (englishLogos.length > 0) {
-                return this.selectBestFromArray(englishLogos).image;
+                const best = this.selectBestFromArray(englishLogos);
+                return best ? best.image : null;
             }
         }
         
         // Step 3: Try any language available
-        return this.selectBestFromArray(clearlogos).image;
+        const best = this.selectBestFromArray(clearlogos);
+        return best ? best.image : null;
     }
 
     /**

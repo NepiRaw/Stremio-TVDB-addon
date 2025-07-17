@@ -1,5 +1,3 @@
-const tvdbService = require('../services/tvdbService');
-
 /**
  * Extract TVDB language code from URL parameter
  * @param {object} req - Express request object
@@ -23,7 +21,7 @@ function getLanguagePreference(req) {
  * Handle metadata requests for specific content
  * Route: /meta/:type/:id.json
  */
-async function metaHandler(req, res) {
+async function metaHandler(req, res, tvdbService) {
     try {
         const { type, id } = req.params;
 

@@ -63,7 +63,9 @@ function hasValidPoster(item) {
  * @returns {boolean} True if item has valid IMDB ID
  */
 function hasValidImdbId(item) {
-    if (!item) return false;
+    if (!item) {
+        return false;
+    }
     
     // Check remoteIds array (most reliable method)
     if (item.remoteIds && Array.isArray(item.remoteIds)) {
@@ -75,7 +77,8 @@ function hasValidImdbId(item) {
         
         if (imdbRemote && imdbRemote.id) {
             const id = imdbRemote.id.toString();
-            return id.startsWith('tt') && id.length >= 9; // tt + 7 digits minimum
+            const isValid = id.startsWith('tt') && id.length >= 9; // tt + 7 digits minimum
+            return isValid;
         }
     }
     
@@ -83,7 +86,8 @@ function hasValidImdbId(item) {
     if (item.imdb && typeof item.imdb === 'string') {
         const id = item.imdb;
         if (id.startsWith('tt')) {
-            return id.length >= 9; // tt + 7 digits minimum
+            const isValid = id.length >= 9; // tt + 7 digits minimum
+            return isValid;
         } else if (/^\d{7,}$/.test(id)) {
             return true; // Numeric IMDB ID without tt prefix
         }

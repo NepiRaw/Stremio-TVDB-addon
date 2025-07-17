@@ -3,14 +3,15 @@
  * Handles intelligent cache invalidation using TVDB /updates endpoint
  */
 
-const cacheService = require('../cacheService');
+// Note: This will be replaced by dependency injection in the constructor
 const logger = require('../../utils/logger');
 
 class UpdatesService {
-    constructor(tvdbApiClient) {
+    constructor(tvdbApiClient, cacheService) {
         this.apiClient = tvdbApiClient;
+        this.cacheService = cacheService;
         this.lastUpdateTimestamp = Date.now();
-        this.updateInterval = cacheService.UPDATES_CHECK_INTERVAL || 12 * 60 * 60 * 1000; // 12 hours default
+        this.updateInterval = this.cacheService.UPDATES_CHECK_INTERVAL || 12 * 60 * 60 * 1000; // 12 hours default
         this.isRunning = false;
         this.intervalId = null;
     }
@@ -216,7 +217,7 @@ class UpdatesService {
                     // we can attempt to invalidate based on ID patterns or skip
                     if (!recordType && recordId) {
                         // Conservative approach: clear search cache when we don't know what changed
-                        invalidatedCount += this.clearCacheByPattern(cacheService.searchCache, 'search:');
+                        invalidatedCount += this.clearCacheByPattern(this.cacheService.searchCache, 'search:');
                         console.log(`🧹 Cleared search cache due to unknown update type for ID: ${recordId}`);
                     }
             }
@@ -235,20 +236,20 @@ class UpdatesService {
         let count = 0;
         
         // Clear metadata cache
-        count += this.clearCacheByPattern(cacheService.metadataCache, `metadata:series:${seriesId}`);
+        count += this.clearCacheByPattern(this.cacheService.metadataCache, `metadata:series:${seriesId}`);
         
         // Clear IMDB cache
-        count += this.clearCacheByPattern(cacheService.imdbCache, `imdb:series:${seriesId}`);
+        count += this.clearCacheByPattern(this.cacheService.imdbCache, `imdb:series:${seriesId}`);
         
         // Clear artwork cache
-        count += this.clearCacheByPattern(cacheService.artworkCache, `artwork:series:${seriesId}`);
+        count += this.clearCacheByPattern(this.cacheService.artworkCache, `artwork:series:${seriesId}`);
         
         // Clear translation cache
-        count += this.clearCacheByPattern(cacheService.translationCache, `translation:series:${seriesId}`);
+        count += this.clearCacheByPattern(this.cacheService.translationCache, `translation:series:${seriesId}`);
         
         // Clear season cache
-        count += this.clearCacheByPattern(cacheService.seasonCache, `season:${seriesId}`);
-        count += this.clearCacheByPattern(cacheService.seasonCache, `seasons:${seriesId}`);
+        count += this.clearCacheByPattern(this.cacheService.seasonCache, `season:${seriesId}`);
+        count += this.clearCacheByPattern(this.cacheService.seasonCache, `seasons:${seriesId}`);
         
         console.log(`🧹 Invalidated ${count} cache entries for series ${seriesId}`);
         return count;
@@ -261,16 +262,16 @@ class UpdatesService {
         let count = 0;
         
         // Clear metadata cache
-        count += this.clearCacheByPattern(cacheService.metadataCache, `metadata:movie:${movieId}`);
+        count += this.clearCacheByPattern(this.cacheService.metadataCache, `metadata:movie:${movieId}`);
         
         // Clear IMDB cache
-        count += this.clearCacheByPattern(cacheService.imdbCache, `imdb:movie:${movieId}`);
+        count += this.clearCacheByPattern(this.cacheService.imdbCache, `imdb:movie:${movieId}`);
         
         // Clear artwork cache
-        count += this.clearCacheByPattern(cacheService.artworkCache, `artwork:movie:${movieId}`);
+        count += this.clearCacheByPattern(this.cacheService.artworkCache, `artwork:movie:${movieId}`);
         
         // Clear translation cache
-        count += this.clearCacheByPattern(cacheService.translationCache, `translation:movie:${movieId}`);
+        count += this.clearCacheByPattern(this.cacheService.translationCache, `translation:movie:${movieId}`);
         
         console.log(`🧹 Invalidated ${count} cache entries for movie ${movieId}`);
         return count;
@@ -284,8 +285,8 @@ class UpdatesService {
         
         if (seriesId) {
             // Episode changes may affect season data
-            count += this.clearCacheByPattern(cacheService.seasonCache, `season:${seriesId}`);
-            count += this.clearCacheByPattern(cacheService.seasonCache, `seasons:${seriesId}`);
+            count += this.clearCacheByPattern(this.cacheService.seasonCache, `season:${seriesId}`);
+            count += this.clearCacheByPattern(this.cacheService.seasonCache, `seasons:${seriesId}`);
         }
         
         console.log(`🧹 Invalidated ${count} cache entries for episode ${episodeId}`);
@@ -300,8 +301,8 @@ class UpdatesService {
         
         if (seriesId) {
             // Clear season-specific cache
-            count += this.clearCacheByPattern(cacheService.seasonCache, `season:${seriesId}`);
-            count += this.clearCacheByPattern(cacheService.seasonCache, `seasons:${seriesId}`);
+            count += this.clearCacheByPattern(this.cacheService.seasonCache, `season:${seriesId}`);
+            count += this.clearCacheByPattern(this.cacheService.seasonCache, `seasons:${seriesId}`);
         }
         
         console.log(`🧹 Invalidated ${count} cache entries for season ${seasonId}`);
@@ -317,10 +318,10 @@ class UpdatesService {
         // Since we don't know which content this artwork belongs to,
         // we'll need to clear all artwork cache (this is rare)
         if (contentType) {
-            count += this.clearCacheByPattern(cacheService.artworkCache, `artwork:${contentType}:`);
+            count += this.clearCacheByPattern(this.cacheService.artworkCache, `artwork:${contentType}:`);
         } else {
             // Clear all artwork cache as fallback
-            count += this.clearCacheByPattern(cacheService.artworkCache, 'artwork:');
+            count += this.clearCacheByPattern(this.cacheService.artworkCache, 'artwork:');
         }
         
         console.log(`🧹 Invalidated ${count} cache entries for artwork ${artworkId}`);
@@ -334,10 +335,10 @@ class UpdatesService {
         let count = 0;
         
         if (contentType) {
-            count += this.clearCacheByPattern(cacheService.translationCache, `translation:${contentType}:`);
+            count += this.clearCacheByPattern(this.cacheService.translationCache, `translation:${contentType}:`);
         } else {
             // Clear all translation cache as fallback
-            count += this.clearCacheByPattern(cacheService.translationCache, 'translation:');
+            count += this.clearCacheByPattern(this.cacheService.translationCache, 'translation:');
         }
         
         console.log(`🧹 Invalidated ${count} cache entries for translation ${translationId}`);

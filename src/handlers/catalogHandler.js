@@ -1,5 +1,3 @@
-const tvdbService = require('../services/tvdbService');
-
 /**
  * Extract TVDB language code from URL parameter
  * @param {object} req - Express request object  
@@ -23,7 +21,7 @@ function getLanguagePreference(req) {
  * Handle catalog requests - provides search-based catalog results
  * Route: /catalog/:type/:id/:extra?.json
  */
-async function catalogHandler(req, res) {
+async function catalogHandler(req, res, tvdbService) {
     const startTime = Date.now();
     
     try {

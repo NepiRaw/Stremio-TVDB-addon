@@ -2,7 +2,36 @@
 
 ## Overview
 
-The TVDB addon uses a sophisticated multi-tier caching system to optimize performance and reduce API calls while ensuring data freshness.
+The TVDB addon uses a sophisticated multi-tier caching system to optimize performance and reduce API calls while ensuring data freshness. The system supports both **in-memory** and **hybrid (MongoDB + in-memory)** caching strategies.
+
+## Architecture
+
+### Cache Service Structure
+
+```
+src/services/cache/
+├── inMemoryCacheService.js     # L1 in-memory caching
+├── hybridCacheService.js       # L1 + L2 hybrid caching with MongoDB
+├── cacheFactory.js             # Configuration-based cache selection
+└── utils/
+    ├── cacheMigration.js       # Migration utility (in-memory → hybrid)
+    └── inspectL2Cache.js       # MongoDB cache inspection tool
+```
+
+### Cache Types
+
+The system supports two caching strategies:
+
+1. **In-Memory Cache (L1 only)**
+   - Fast access, single-tier caching
+   - Memory-based storage with TTL management
+   - Suitable for development and small deployments
+
+2. **Hybrid Cache (L1 + L2)**
+   - **L1**: In-memory for immediate access
+   - **L2**: MongoDB for persistence and scalability
+   - Automatic promotion from L2 to L1 on cache hits
+   - Graceful fallback if MongoDB unavailable
 
 ## Cache Types & TTL Configuration
 
@@ -163,3 +192,90 @@ Cache performance can be monitored through:
 3. **Type-Specific**: Different TTLs for different data volatility patterns
 4. **Memory Efficient**: Automatic cleanup prevents memory leaks
 5. **Future-Proof**: Architecture ready for MongoDB migration
+
+## Cache Inspection & Debugging Tools
+
+### L2 Cache Inspector (`inspectL2Cache.js`)
+
+A comprehensive tool for viewing MongoDB cache contents in detail.
+
+```bash
+# View cache summary
+node src/services/cache/utils/inspectL2Cache.js summary
+
+# View specific cache type details
+node src/services/cache/utils/inspectL2Cache.js details search 10
+node src/services/cache/utils/inspectL2Cache.js details metadata 5
+
+# Search cache contents
+node src/services/cache/utils/inspectL2Cache.js search "batman"
+```
+
+**Features:**
+- **Summary View**: Total entries per cache type (active/expired)
+- **Detailed View**: Entry keys, data sizes, TTL remaining, data previews
+- **Search Function**: Find cached content by key or data content
+- **Data Previews**: Truncated view of cached data for readability
+- **Expiry Status**: Visual indicators for active vs expired entries
+
+### Cache Migration Tool (`cacheMigration.js`)
+
+Utility for migrating between cache strategies and inspection.
+
+```bash
+# Run full migration (in-memory → hybrid)
+node src/services/cache/utils/cacheMigration.js migrate
+
+# Quick cache inspection
+node src/services/cache/utils/cacheMigration.js inspect
+node src/services/cache/utils/cacheMigration.js inspect search
+node src/services/cache/utils/cacheMigration.js inspect metadata batman
+
+# Show help
+node src/services/cache/utils/cacheMigration.js help
+```
+
+**Purpose of cacheMigration.js:**
+1. **Data Migration**: Seamlessly migrate existing cache data from in-memory to hybrid MongoDB storage
+2. **Performance Testing**: Compare cache performance between strategies
+3. **Data Integrity**: Verify cache data consistency during migration
+4. **Production Transition**: Safe transition from development (in-memory) to production (hybrid) caching
+5. **Cache Inspection**: Quick MongoDB cache inspection for debugging
+
+**Migration Process:**
+- Preserves existing TTLs during migration
+- Transfers only non-expired entries
+- Provides performance comparison metrics
+- Generates detailed migration reports
+- Safe fallback if migration fails
+
+### Usage Examples
+
+**Viewing Current Cache Status:**
+```bash
+# See what's cached in MongoDB
+node src/services/cache/utils/inspectL2Cache.js summary
+
+# Expected output:
+📊 L2 Cache Summary:
+📁 SEARCH: Total: 106, Active: 106, Expired: 0
+📁 IMDB: Total: 102, Active: 102, Expired: 0  
+📁 ARTWORK: Total: 102, Active: 102, Expired: 0
+📁 METADATA: Total: 111, Active: 111, Expired: 0
+🎯 TOTALS: Active: 421 entries, Size: ~88 KB
+```
+
+**Debugging Search Issues:**
+```bash
+# Find Batman-related cached searches
+node src/services/cache/utils/inspectL2Cache.js search batman
+
+# View recent search cache entries
+node src/services/cache/utils/inspectL2Cache.js details search 10
+```
+
+**Production Migration:**
+```bash
+# Migrate from in-memory to hybrid with full report
+node src/services/cache/utils/cacheMigration.js migrate
+```

@@ -4,13 +4,14 @@
  */
 
 const { validateImdbRequirement } = require('../../utils/imdbFilter');
-const cacheService = require('../cacheService');
+// Note: This will be replaced by dependency injection in the constructor
 
 class CatalogTransformer {
-    constructor(contentFetcher, translationService, artworkHandler) {
+    constructor(contentFetcher, translationService, artworkHandler, cacheService) {
         this.contentFetcher = contentFetcher;
         this.translationService = translationService;
         this.artworkHandler = artworkHandler;
+        this.cacheService = cacheService;
     }
 
     /**
@@ -63,13 +64,16 @@ class CatalogTransformer {
                     const numericId = meta.id.replace('tvdb-', '');
                     
                     // Check cache first
-                    const cachedValidation = cacheService.getImdbValidation(meta.type, numericId);
+                    const cachedValidation = await this.cacheService.getImdbValidation(meta.type, numericId);
                     if (cachedValidation !== null) {
-                        if (cachedValidation.isValid) {
+                        if (cachedValidation.isValid === true) {
                             return meta;
-                        } else {
+                        } else if (cachedValidation.isValid === false) {
                             console.log(`💾 "${meta.name}" - Cached as invalid, excluded from catalog`);
                             return null;
+                        } else {
+                            // isValid is null - treat as cache miss and fetch fresh data
+                            console.log(`🔄 "${meta.name}" - Cached validation is null, re-validating`);
                         }
                     }
                     
@@ -78,7 +82,7 @@ class CatalogTransformer {
                     const isValid = detailedData && validateImdbRequirement(detailedData, meta.type);
                     
                     // Cache the result
-                    cacheService.setImdbValidation(meta.type, numericId, isValid, detailedData);
+                    await this.cacheService.setImdbValidation(meta.type, numericId, isValid, detailedData);
                     
                     if (isValid) {
                         return meta;

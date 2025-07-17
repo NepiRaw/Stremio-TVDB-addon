@@ -5,12 +5,12 @@ const ArtworkHandler = require('./tvdb/artworkHandler');
 const CatalogTransformer = require('./tvdb/catalogTransformer');
 const MetadataTransformer = require('./tvdb/metadataTransformer');
 const UpdatesService = require('./tvdb/updatesService');
-const cacheService = require('./cacheService');
 const { getEnhancedReleaseInfo } = require('../utils/theatricalStatus');
 
 class TVDBService {
-    constructor() {
+    constructor(cacheService) {
         this.baseURL = process.env.TVDB_BASE_URL || 'https://api4.thetvdb.com/v4';
+        this.cacheService = cacheService;
         this.apiKey = process.env.TVDB_API_KEY;
         this.token = null;
         this.tokenExpiry = null;
@@ -20,10 +20,10 @@ class TVDBService {
         }
 
         // Initialize modular services
-        this.contentFetcher = new ContentFetcher(this);
-        this.translationService = new TranslationService(this);
-        this.artworkHandler = new ArtworkHandler(this);
-        this.catalogTransformer = new CatalogTransformer(this.contentFetcher, this.translationService, this.artworkHandler);
+        this.contentFetcher = new ContentFetcher(this, this.cacheService);
+        this.translationService = new TranslationService(this, this.cacheService);
+        this.artworkHandler = new ArtworkHandler(this, this.cacheService);
+        this.catalogTransformer = new CatalogTransformer(this.contentFetcher, this.translationService, this.artworkHandler, this.cacheService);
         this.metadataTransformer = new MetadataTransformer(
             this.contentFetcher, 
             this.translationService, 
@@ -31,7 +31,7 @@ class TVDBService {
         );
         
         // Initialize updates service for intelligent cache invalidation
-        this.updatesService = new UpdatesService(this);
+        this.updatesService = new UpdatesService(this, this.cacheService);
     }
 
     /**
@@ -129,8 +129,19 @@ class TVDBService {
      * Search for content in TVDB with enhanced performance and caching
      */
     async search(query, type = null, limit = 20, userLanguage = 'eng') {
-        // Check cache first
-        const cachedResults = cacheService.getSearchResults(query, type || 'all', userLanguage);
+        // Generate cache key
+        const cacheKey = `search:${type || 'all'}:${userLanguage}:${query.toLowerCase().trim()}`;
+        
+        // Check cache first - handle both in-memory and hybrid cache
+        let cachedResults;
+        if (this.cacheService.getCachedData) {
+            // Hybrid cache
+            cachedResults = await this.cacheService.getCachedData('search', cacheKey);
+        } else {
+            // In-memory cache
+            cachedResults = this.cacheService.getSearchResults(query, type || 'all', userLanguage);
+        }
+        
         if (cachedResults) {
             return cachedResults;
         }
@@ -148,8 +159,15 @@ class TVDBService {
             const response = await this.makeRequest('/search', params);
             const results = response.data || [];
             
-            // Cache the results
-            cacheService.setSearchResults(query, type || 'all', userLanguage, results);
+            // Cache the results - handle both in-memory and hybrid cache
+            if (this.cacheService.setCachedData) {
+                // Hybrid cache
+                const cacheTTL = 2 * 60 * 60 * 1000; // 2 hours
+                await this.cacheService.setCachedData('search', cacheKey, results, cacheTTL);
+            } else {
+                // In-memory cache
+                this.cacheService.setSearchResults(query, type || 'all', userLanguage, results);
+            }
             
             return results;
         } catch (error) {
@@ -183,14 +201,19 @@ class TVDBService {
      * Clear all caches (for testing and debugging)
      */
     clearCache() {
-        cacheService.clearAll();
+        if (this.cacheService.clearAll) {
+            this.cacheService.clearAll();
+        } else if (this.cacheService.clearByPattern) {
+            // Hybrid cache - clear all patterns
+            this.cacheService.clearByPattern('');
+        }
     }
 
     /**
      * Get cache statistics
      */
     getCacheStats() {
-        return cacheService.getStats();
+        return this.cacheService.getStats();
     }
 
     // Delegated methods for backward compatibility and clean API
@@ -292,6 +315,8 @@ class TVDBService {
     async transformDetailedToStremioMeta(item, type, seasonsData = null, tvdbLanguage = 'eng') {
         return this.metadataTransformer.transformDetailedToStremioMeta(item, type, seasonsData, tvdbLanguage);
     }
+
 }
 
-module.exports = new TVDBService();
+module.exports = TVDBService;
+

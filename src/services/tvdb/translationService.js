@@ -3,11 +3,12 @@
  * Handles language selection, mapping, and bulk translations
  */
 
-const cacheService = require('../cacheService');
+// Note: This will be replaced by dependency injection in the constructor
 
 class TranslationService {
-    constructor(apiClient) {
+    constructor(apiClient, cacheService) {
         this.apiClient = apiClient;
+        this.cacheService = cacheService;
     }
 
     /**
@@ -26,7 +27,7 @@ class TranslationService {
     async getTranslation(entityType, entityId, tvdbLanguage) {
         try {
             // Check cache first
-            const cachedTranslation = cacheService.getTranslation(entityType, entityId, tvdbLanguage, 'full');
+            const cachedTranslation = await this.cacheService.getTranslation(entityType, entityId, tvdbLanguage, 'full');
             if (cachedTranslation) {
                 console.log(`💾 Translation cache HIT for ${entityType} ${entityId} (${tvdbLanguage})`);
                 return cachedTranslation;
@@ -37,7 +38,7 @@ class TranslationService {
             const translationData = response?.data || null;
 
             // Cache the translation data
-            cacheService.setTranslation(entityType, entityId, tvdbLanguage, 'full', translationData);
+            await this.cacheService.setTranslation(entityType, entityId, tvdbLanguage, 'full', translationData);
             
             if (translationData) {
                 console.log(`🌍 Cached translation for ${entityType} ${entityId} (${tvdbLanguage})`);
@@ -47,7 +48,7 @@ class TranslationService {
         } catch (error) {
             console.error(`Translation fetch error for ${entityType} ${entityId} in ${tvdbLanguage}:`, error.message);
             // Cache negative result to avoid repeated API calls
-            cacheService.setTranslation(entityType, entityId, tvdbLanguage, 'full', null);
+            await this.cacheService.setTranslation(entityType, entityId, tvdbLanguage, 'full', null);
             return null;
         }
     }

@@ -245,7 +245,7 @@
 
 The addon can be installed using this URL pattern:
 ```
-stremio://org.stremio.tvdb-addon/manifest.json
+stremio://yourdomain/manifest.json
 ```
 
 Or by opening the manifest URL directly in Stremio.
