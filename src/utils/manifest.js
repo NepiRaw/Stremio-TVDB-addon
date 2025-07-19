@@ -37,6 +37,9 @@ function getManifest(tvdbLanguage = 'eng', req) {
         // Content types supported
         types: ['movie', 'series'],
         
+        // ID prefixes this addon can handle
+        idPrefixes: ['tvdb-', 'tt'],
+        
         // Catalog definitions - search-only catalogs
         catalogs: [
             {

@@ -179,6 +179,50 @@ class ContentFetcher {
     }
 
     /**
+     * Extract all external IDs from content data for cross-referencing
+     * This helps link content across different Stremio addons
+     */
+    extractExternalIds(item) {
+        const externalIds = {
+            tvdb_id: item.id ? item.id.toString() : null
+        };
+        
+        if (item.remoteIds && Array.isArray(item.remoteIds)) {
+            item.remoteIds.forEach(remote => {
+                const sourceName = remote.sourceName?.toLowerCase();
+                const remoteId = remote.id;
+                
+                if (!remoteId) return;
+                
+                switch (sourceName) {
+                    case 'imdb':
+                        externalIds.imdb_id = remoteId.startsWith('tt') ? remoteId : `tt${remoteId}`;
+                        break;
+                    case 'themoviedb':
+                    case 'tmdb':
+                        externalIds.tmdb_id = remoteId.toString();
+                        break;
+                    case 'thetvdb':
+                        externalIds.thetvdb_id = remoteId.toString();
+                        break;
+                    default:
+                        // Store any other external IDs with their source name
+                        if (sourceName && remoteId) {
+                            externalIds[`${sourceName}_id`] = remoteId.toString();
+                        }
+                }
+            });
+        }
+        
+        // Fallback: check for direct fields
+        if (item.imdb && typeof item.imdb === 'string') {
+            externalIds.imdb_id = item.imdb.startsWith('tt') ? item.imdb : `tt${item.imdb}`;
+        }
+        
+        return externalIds;
+    }
+
+    /**
      * Filter valid seasons (aired content only)
      */
     filterValidSeasons(seasonsData) {

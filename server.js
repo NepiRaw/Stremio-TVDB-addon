@@ -10,6 +10,7 @@ const catalogHandler = require('./src/handlers/catalogHandler');
 const metaHandler = require('./src/handlers/metaHandler');
 const installationPageHandler = require('./src/handlers/installationPageHandler');
 const TVDBService = require('./src/services/tvdbService');
+const RatingService = require('./src/services/ratingService');
 const { errorHandler } = require('./src/utils/errorHandler');
 const { requestLogger } = require('./src/utils/logger');
 const CacheFactory = require('./src/services/cache/cacheFactory');
@@ -18,8 +19,21 @@ const CacheFactory = require('./src/services/cache/cacheFactory');
 CacheFactory.displayCacheInfo();
 const cacheService = CacheFactory.createCache();
 
-// Create TVDB service instance with cache service
-const tvdbService = new TVDBService(cacheService);
+// Initialize Rating service (OMDB + imdbapi.dev fallback)
+let ratingService = null;
+try {
+    ratingService = new RatingService(cacheService, process.env.OMDB_API_KEY);
+    if (process.env.OMDB_API_KEY) {
+        console.log('🎬 Rating service initialized with OMDB API - IMDb ratings will be enhanced');
+    } else {
+        console.log('🎬 Rating service initialized with imdbapi.dev fallback - IMDb ratings will be enhanced');
+    }
+} catch (error) {
+    console.error('❌ Failed to initialize Rating service:', error.message);
+}
+
+// Create TVDB service instance with cache service and optional rating service
+const tvdbService = new TVDBService(cacheService, ratingService);
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -38,11 +52,13 @@ app.get('/', installationPageHandler);
 // Language-specific routes
 app.get('/:language/manifest.json', manifestHandler);
 app.get('/:language/catalog/:type/:id/:extra?.json', (req, res) => catalogHandler(req, res, tvdbService));
+app.get('/:language/catalog/:type/:id.json', (req, res) => catalogHandler(req, res, tvdbService)); // Query parameter support
 app.get('/:language/meta/:type/:id.json', (req, res) => metaHandler(req, res, tvdbService));
 
 // Default routes (English)
 app.get('/manifest.json', manifestHandler);
 app.get('/catalog/:type/:id/:extra?.json', (req, res) => catalogHandler(req, res, tvdbService));
+app.get('/catalog/:type/:id.json', (req, res) => catalogHandler(req, res, tvdbService)); // Query parameter support
 app.get('/meta/:type/:id.json', (req, res) => metaHandler(req, res, tvdbService));
 
 // Health check

@@ -30,14 +30,55 @@ async function metaHandler(req, res, tvdbService) {
             return res.status(400).json({ error: 'Invalid content type' });
         }
 
-        // Validate and extract TVDB ID
-        if (!id.startsWith('tvdb-')) {
-            return res.status(400).json({ error: 'Invalid ID format' });
-        }
-
-        const tvdbId = id.replace('tvdb-', '');
-        if (!tvdbId || isNaN(tvdbId)) {
-            return res.status(400).json({ error: 'Invalid TVDB ID' });
+        // Validate and extract ID - support both TVDB and IMDb formats
+        let tvdbId;
+        let isImdbId = false;
+        
+        if (id.startsWith('tvdb-')) {
+            // TVDB format: tvdb-123456
+            tvdbId = id.replace('tvdb-', '');
+            if (!tvdbId || isNaN(tvdbId)) {
+                return res.status(400).json({ error: 'Invalid TVDB ID' });
+            }
+        } else if (id.startsWith('tt') && /^tt\d{7,}$/.test(id)) {
+            // IMDb format: tt1234567
+            isImdbId = true;
+            const imdbId = id;
+            
+            // Search for TVDB ID using IMDb ID
+            console.log(`🔍 Looking up TVDB ID for IMDb ID: ${imdbId}`);
+            
+            try {
+                const searchResults = await tvdbService.search(`"${imdbId}"`, type);
+                console.log(`🔍 Search results for "${imdbId}":`, searchResults?.length, 'items');
+                if (searchResults && searchResults.length > 0) {
+                    // Log first result structure for debugging
+                    console.log(`🔍 First search result structure:`, JSON.stringify(searchResults[0], null, 2));
+                    
+                    // Find exact match by IMDb ID
+                    const exactMatch = searchResults.find(result => {
+                        const resultImdbId = tvdbService.contentFetcher.extractImdbId(result);
+                        console.log(`🔍 Checking result ID ${result.id}: extracted IMDb ID = ${resultImdbId}`);
+                        return resultImdbId === imdbId;
+                    });
+                    
+                    if (exactMatch) {
+                        tvdbId = exactMatch.id.toString();
+                        console.log(`✅ Found TVDB ID ${tvdbId} for IMDb ID ${imdbId}`);
+                    } else {
+                        console.log(`❌ No exact IMDb match found for ${imdbId}`);
+                        return res.status(404).json({ error: 'Content not found by IMDb ID' });
+                    }
+                } else {
+                    console.log(`❌ No search results found for IMDb ID ${imdbId}`);
+                    return res.status(404).json({ error: 'Content not found by IMDb ID' });
+                }
+            } catch (searchError) {
+                console.error(`Search error for IMDb ID ${imdbId}:`, searchError.message);
+                return res.status(500).json({ error: 'Failed to lookup content by IMDb ID' });
+            }
+        } else {
+            return res.status(400).json({ error: 'Invalid ID format. Use tvdb-123456 or tt1234567 format' });
         }
 
         // Extract user's preferred language

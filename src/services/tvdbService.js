@@ -8,9 +8,10 @@ const UpdatesService = require('./tvdb/updatesService');
 const { getEnhancedReleaseInfo } = require('../utils/theatricalStatus');
 
 class TVDBService {
-    constructor(cacheService) {
+    constructor(cacheService, ratingService = null) {
         this.baseURL = process.env.TVDB_BASE_URL || 'https://api4.thetvdb.com/v4';
         this.cacheService = cacheService;
+        this.ratingService = ratingService; // Optional rating service for IMDb ratings enhancement
         this.apiKey = process.env.TVDB_API_KEY;
         this.token = null;
         this.tokenExpiry = null;
@@ -292,7 +293,9 @@ class TVDBService {
      * Transform search results (delegated to CatalogTransformer)
      */
     async transformSearchResults(results, type, userLanguage = null) {
-        return this.catalogTransformer.transformSearchResults(results, type, userLanguage);
+        const catalogResults = await this.catalogTransformer.transformSearchResults(results, type, userLanguage);
+        
+        return catalogResults;
     }
 
     /**
@@ -310,10 +313,108 @@ class TVDBService {
     }
 
     /**
-     * Transform detailed to Stremio meta (delegated to MetadataTransformer)
+     * Transform TVDB detailed data to Stremio meta format and enrich with IMDb ratings
      */
     async transformDetailedToStremioMeta(item, type, seasonsData = null, tvdbLanguage = 'eng') {
-        return this.metadataTransformer.transformDetailedToStremioMeta(item, type, seasonsData, tvdbLanguage);
+        // Create cache key based on item ID, type, and language
+        const itemId = item.id || item.tvdb_id;
+        const cacheKey = `meta:enhanced:${itemId}:${type}:${tvdbLanguage}`;
+        
+        // Try to get from cache first
+        try {
+            const cachedMeta = await this.cacheService.getCachedData('metadata', cacheKey);
+            if (cachedMeta && !cachedMeta.notFound) {
+                console.log(`✅ Enhanced metadata cache hit for ${item.name || itemId}`);
+                return cachedMeta;
+            }
+        } catch (error) {
+            console.error(`Cache error for enhanced metadata: ${error.message}`);
+        }
+        
+        // Get the base metadata from the transformer
+        const meta = await this.metadataTransformer.transformDetailedToStremioMeta(item, type, seasonsData, tvdbLanguage);
+        
+        if (!meta) {
+            return null;
+        }
+        
+        // Enrich with IMDb ratings if available
+        if (this.ratingService && meta && meta.imdb_id) {
+            try {
+                console.log(`🎬 Enriching ${meta.name} (${meta.imdb_id}) with IMDb ratings...`);
+                
+                const ratingData = await this.ratingService.getImdbRating(meta.imdb_id, type);
+                
+                if (ratingData && !ratingData.notFound) {
+                    // Add IMDb rating data to the meta object
+                    if (ratingData.imdb_rating) {
+                        meta.imdbRating = ratingData.imdb_rating;
+                    }
+                    
+                    // Add vote count if available and not already present
+                    if (!meta.votes && ratingData.imdb_votes) {
+                        meta.votes = ratingData.imdb_votes;
+                    }
+                    
+                    // Add additional metadata if available
+                    if (ratingData.metascore) {
+                        meta.metascore = ratingData.metascore;
+                    }
+                    
+                    if (ratingData.rotten_tomatoes) {
+                        meta.rottenTomatoes = ratingData.rotten_tomatoes;
+                    }
+                    
+                    // Enhance description with plot if available and current description is short
+                    if (ratingData.plot && (!meta.description || meta.description.length < 100)) {
+                        meta.description = ratingData.plot;
+                    }
+                    
+                    // Add runtime if not present
+                    if (!meta.runtime && ratingData.runtime) {
+                        meta.runtime = ratingData.runtime;
+                    }
+                    
+                    // Add genre if not present
+                    if (!meta.genre && ratingData.genre) {
+                        meta.genre = ratingData.genre.split(', ');
+                    }
+                    
+                    // Add director if not present
+                    if (!meta.director && ratingData.director) {
+                        meta.director = ratingData.director.split(', ');
+                    }
+                    
+                    // Add awards if available
+                    if (ratingData.awards) {
+                        meta.awards = ratingData.awards;
+                    }
+                    
+                    // Merge external IDs from rating service
+                    if (ratingData.external_ids) {
+                        meta.external_ids = { ...meta.external_ids, ...ratingData.external_ids };
+                    }
+                    
+                    console.log(`✨ IMDb enhanced: ${meta.name} - Rating: ${ratingData.imdb_rating}/10 (${ratingData.imdb_votes} votes) via ${ratingData.source}`);
+                } else {
+                    console.log(`ℹ️  No IMDb rating data found for ${meta.imdb_id}`);
+                }
+            } catch (error) {
+                console.error(`❌ Failed to enrich metadata with IMDb ratings for ${meta.imdb_id}:`, error.message);
+                // Don't fail the entire request if rating enhancement fails
+            }
+        }
+        
+        // Cache the enhanced metadata (longer TTL since it includes external data)
+        const TTL = 24 * 60 * 60; // 24 hours
+        try {
+            await this.cacheService.setCachedData('metadata', cacheKey, meta, TTL);
+            console.log(`📦 Cached enhanced metadata for ${meta.name || itemId} (24h TTL)`);
+        } catch (error) {
+            console.error(`Failed to cache enhanced metadata: ${error.message}`);
+        }
+        
+        return meta;
     }
 
 }

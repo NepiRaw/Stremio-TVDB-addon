@@ -15,13 +15,16 @@
 - **Response**: JSON manifest object
 
 ### Catalog Search
-- **URL**: `/catalog/:type/:id/:extra?.json`
+- **URL**: `/catalog/:type/:id/:extra?.json` or `/catalog/:type/:id.json`
 - **Method**: GET
 - **Parameters**:
   - `type`: Content type (`movie`, `series`)
   - `id`: Catalog ID (`tvdb-movies`, `tvdb-series`)
-  - `extra`: URL-encoded search parameters
-- **Example**: `/catalog/movie/tvdb-movies/search=batman.json`
+  - `extra`: URL-encoded search parameters (path format)
+  - `search`: Search query (query parameter format)
+- **Examples**: 
+  - Path format: `/catalog/movie/tvdb-movies/search=batman.json`
+  - Query format: `/catalog/movie/tvdb-movies.json?search=batman`
 - **Response**: 
   ```json
   {

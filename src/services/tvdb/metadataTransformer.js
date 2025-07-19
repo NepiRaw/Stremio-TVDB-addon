@@ -1,6 +1,29 @@
 /**
- * TVDB Metadata Transformer
- * Transforms detailed content data to full Stremio metadata format
+ * TVDB Metadata Transf            const numericId = parseInt(id, 10);
+            
+            // Extract all external IDs for cross-referencing
+            const externalIds = this.contentFetcher.extractExternalIds(item);
+            
+            // Create Stremio-compatible primary ID
+            // Priority: IMDb ID > TMDB ID > TVDB ID (for better cross-addon compatibility)
+            let primaryId;
+            if (externalIds.imdb_id) {
+                primaryId = `${stremioType}:imdb:${externalIds.imdb_id}`;
+            } else if (externalIds.tmdb_id) {
+                primaryId = `${stremioType}:tmdb:${externalIds.tmdb_id}`;
+            } else {
+                primaryId = `${stremioType}:tvdb:${numericId}`;
+            }
+
+            // Base meta object with cross-reference IDs
+            const meta = {
+                id: primaryId,
+                type: stremioType,
+                name: item.name || 'Unknown Title',
+                
+                // Add all external IDs for cross-addon linking
+                ...externalIds
+            }; Transforms detailed content data to full Stremio metadata format
  */
 
 const { validateImdbRequirement } = require('../../utils/imdbFilter');
@@ -27,13 +50,22 @@ class MetadataTransformer {
             }
             
             const numericId = this.extractNumericId(item.id);
-            const id = `tvdb-${numericId}`;
+            
+            // Extract all external IDs for cross-referencing
+            const externalIds = this.contentFetcher.extractExternalIds(item);
+            
+            // Use TVDB ID as primary for this addon (maintains catalog compatibility)
+            // External IDs will be included separately for cross-addon linking
+            const primaryId = `tvdb-${numericId}`;
 
-            // Base meta object
+            // Base meta object with cross-reference IDs
             const meta = {
-                id,
+                id: primaryId,
                 type: stremioType,
-                name: item.name || 'Unknown Title'
+                name: item.name || 'Unknown Title',
+                
+                // Add all external IDs for cross-addon linking
+                ...externalIds
             };
 
             // Get translations
@@ -42,20 +74,14 @@ class MetadataTransformer {
             // Apply artwork
             await this.applyArtwork(meta, stremioType, numericId, tvdbLanguage, item);
 
-            // Extract IMDB ID
-            const imdbId = this.contentFetcher.extractImdbId(item);
-            if (imdbId) {
-                meta.imdb_id = imdbId;
-            }
-
             // Add basic metadata
             this.addBasicMetadata(meta, item, tvdbLanguage);
 
             // Add type-specific content
             if (stremioType === 'series') {
-                await this.addSeriesContent(meta, numericId, seasonsData, tvdbLanguage, imdbId);
+                await this.addSeriesContent(meta, numericId, seasonsData, tvdbLanguage, externalIds);
             } else {
-                this.addMovieContent(meta, imdbId);
+                this.addMovieContent(meta, externalIds.imdb_id);
             }
 
             // Clean up empty arrays
@@ -390,7 +416,7 @@ class MetadataTransformer {
     /**
      * Add series-specific content (episodes, seasons)
      */
-    async addSeriesContent(meta, numericId, seasonsData, tvdbLanguage, imdbId) {
+    async addSeriesContent(meta, numericId, seasonsData, tvdbLanguage, externalIds) {
         meta.videos = [];
         meta.seasons = 0;
         
@@ -434,11 +460,13 @@ class MetadataTransformer {
         meta.seasons = seasonsWithContent.length;
         console.log(`📺 Final seasons with content: ${meta.seasons}`);
 
-        // Build video entries
+        // Build video entries with cross-addon compatible IDs
         const videoMap = new Map();
         for (const episode of airedEpisodes) {
-            const videoId = imdbId ? 
-                `${imdbId}:${episode.seasonNumber}:${episode.number}` :
+            // Use IMDb format for video IDs when available (for cross-addon watch state sync)
+            // Otherwise fall back to TVDB format for this addon's episodes
+            const videoId = externalIds.imdb_id ? 
+                `${externalIds.imdb_id}:${episode.seasonNumber}:${episode.number}` :
                 `${numericId}:${episode.seasonNumber}:${episode.number}`;
             
             if (!videoMap.has(videoId)) {

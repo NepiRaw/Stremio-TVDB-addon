@@ -27,11 +27,15 @@ async function catalogHandler(req, res, tvdbService) {
     try {
         const { type, id, extra } = req.params;
         
-        // Parse extra parameters
+        // Parse extra parameters from path (Stremio protocol) or query parameters (user-friendly)
         let extraParams = {};
         if (extra) {
+            // Path parameter format: /catalog/series/tvdb-series/search=friends.json
             const decodedExtra = decodeURIComponent(extra);
             extraParams = parseExtraParams(decodedExtra);
+        } else {
+            // Query parameter format: /catalog/series/tvdb-series.json?search=friends
+            extraParams = req.query || {};
         }
 
         // Validate type
