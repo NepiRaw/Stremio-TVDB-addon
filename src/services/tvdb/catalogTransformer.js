@@ -140,10 +140,10 @@ class CatalogTransformer {
                 name: selectedName
             };
 
-            // Get enhanced artwork including clearlogo for series
+            // Get enhanced artwork including clearlogo for both series and movies
             if (stremioType === 'series') {
                 try {
-                    const artwork = await this.artworkHandler.getArtwork('series', numericId, userLanguage);
+                    const artwork = await this.artworkHandler.getArtwork('series', numericId, this.translationService.mapToTvdbLanguage(userLanguage));
                     
                     if (artwork.poster) {
                         meta.poster = artwork.poster;
@@ -156,16 +156,41 @@ class CatalogTransformer {
                 } catch (error) {
                     console.log(`🎨 Artwork error for ${selectedName}: ${error.message}`);
                 }
+            } else if (stremioType === 'movie') {
+                // For movies, fetch extended data to get artworks for language-aware selection
+                try {
+                    const movieData = await this.contentFetcher.getContentDetails('movie', numericId);
+                    if (movieData && movieData.artworks) {
+                        // Add artworks to item so language-aware selection can work
+                        item.artworks = movieData.artworks;
+                    }
+                } catch (error) {
+                    console.log(`🎨 Movie artwork fetch error for ${selectedName}: ${error.message}`);
+                }
             }
 
-            // Add poster fallbacks if not already set
+            // Add poster fallbacks if not already set - use language-aware selection
             if (!meta.poster) {
-                const posterSources = [
-                    item.image_url, item.poster, item.image, item.thumbnail
-                ].filter(Boolean);
-                
-                if (posterSources.length > 0) {
-                    meta.poster = posterSources[0];
+                // Use language-aware poster selection if artworks available
+                if (item.artworks && item.artworks.length > 0) {
+                    const { posterSources } = this.artworkHandler.getArtworkFallbacks(
+                        item, 
+                        meta.type, 
+                        this.translationService.mapToTvdbLanguage(userLanguage || 'eng')
+                    );
+                    
+                    if (posterSources.length > 0) {
+                        meta.poster = posterSources[0];
+                    }
+                } else {
+                    // Fallback to basic sources only if no artworks available
+                    const posterSources = [
+                        item.image_url, item.poster, item.image, item.thumbnail
+                    ].filter(Boolean);
+                    
+                    if (posterSources.length > 0) {
+                        meta.poster = posterSources[0];
+                    }
                 }
             }
 

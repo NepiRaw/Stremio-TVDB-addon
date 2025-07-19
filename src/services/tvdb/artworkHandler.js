@@ -3,8 +3,6 @@
  * Handles poster, background, and logo selection for movies and series
  */
 
-// Note: This will be replaced by dependency injection in the constructor
-
 class ArtworkHandler {
     constructor(apiClient, cacheService) {
         this.apiClient = apiClient;
@@ -201,10 +199,13 @@ class ArtworkHandler {
      * Get enhanced artwork sources with fallbacks for metadata
      */
     getArtworkFallbacks(item, stremioType, language = 'eng') {
+        // Prioritize language-aware sorted posters, then fallback to item defaults
+        const sortedPosters = this.getTypeSpecificPosters(item, stremioType, language);
+        
         const posterSources = [
+            ...sortedPosters,
             item.image,
-            item.poster,
-            ...this.getTypeSpecificPosters(item, stremioType)
+            item.poster
         ].filter(Boolean);
 
         const backgroundSources = [
@@ -225,28 +226,51 @@ class ArtworkHandler {
     }
 
     /**
-     * Get type-specific poster sources
+     * Get type-specific poster sources with language preference
      */
-    getTypeSpecificPosters(item, stremioType) {
+    getTypeSpecificPosters(item, stremioType, language = 'eng') {
         if (!item.artworks) return [];
         
-        return item.artworks
+        const posters = item.artworks
             .filter(art => {
                 const isMoviePoster = (stremioType === 'movie') && 
                     (art.type === 14 || art.typeName?.toLowerCase().includes('poster'));
                 const isSeriesPoster = (stremioType === 'series') && 
                     (art.type === 2 || art.typeName?.toLowerCase().includes('poster'));
                 return (isMoviePoster || isSeriesPoster) && art.image;
-            })
+            });
+
+        // Apply language-aware sorting with fallback chain: pref lang -> eng -> any lang
+        const sorted = posters
             .sort((a, b) => {
+                // Step 1: Prioritize preferred language
+                const aLangMatch = (a.language === language) ? 2 : 0;
+                const bLangMatch = (b.language === language) ? 2 : 0;
+                
+                // Step 2: Then English fallback (if not already preferred)
+                const aEngMatch = (language !== 'eng' && a.language === 'eng') ? 1 : 0;
+                const bEngMatch = (language !== 'eng' && b.language === 'eng') ? 1 : 0;
+                
+                const aLangScore = aLangMatch + aEngMatch;
+                const bLangScore = bLangMatch + bEngMatch;
+                
+                if (aLangScore !== bLangScore) return bLangScore - aLangScore;
+
+                // Step 3: Then by score
+                if ((b.score || 0) !== (a.score || 0)) return (b.score || 0) - (a.score || 0);
+                
+                // Step 4: Then by aspect ratio (prefer portrait for posters)
                 const aRatio = a.width && a.height ? a.width / a.height : 0;
                 const bRatio = b.width && b.height ? b.width / b.height : 0;
                 const aIsPortrait = aRatio >= 0.6 && aRatio <= 0.8;
                 const bIsPortrait = bRatio >= 0.6 && bRatio <= 0.8;
                 if (aIsPortrait !== bIsPortrait) return bIsPortrait ? 1 : -1;
+                
+                // Step 5: Finally by resolution
                 return ((b.width || 0) * (b.height || 0)) - ((a.width || 0) * (a.height || 0));
-            })
-            .map(art => art.image);
+            });
+        
+        return sorted.map(art => art.image);
     }
 
     /**
