@@ -209,12 +209,38 @@ class CatalogTransformer {
                 }
             }
 
-            // Add description
+            // Add theatrical status and release info for movies
+            if (stremioType === 'movie') {
+                try {
+                    const { getEnhancedReleaseInfo } = require('../../utils/theatricalStatus');
+                    const tvdbLanguage = this.translationService.mapToTvdbLanguage(userLanguage || 'eng');
+                    const releaseInfo = getEnhancedReleaseInfo(item, tvdbLanguage);
+                    
+                    if (releaseInfo.released) {
+                        meta.released = releaseInfo.released;
+                    }
+                    
+                    if (releaseInfo.year && !meta.year) {
+                        meta.year = releaseInfo.year;
+                    }
+                    
+                    if (releaseInfo.statusMessage && releaseInfo.theatricalStatus?.inTheaters) {
+                        const currentDescription = selectedDescription || '';
+                        if (currentDescription) {
+                            selectedDescription = `${releaseInfo.statusMessage}\n\n${currentDescription}`;
+                        } else {
+                            selectedDescription = releaseInfo.statusMessage;
+                        }
+                    }
+                } catch (error) {
+                    console.log(`🎬 Theatrical status error for ${selectedName}: ${error.message}`);
+                }
+            }
+
             if (selectedDescription) {
                 meta.description = selectedDescription;
             }
 
-            // Add genres
             if (item.genres && Array.isArray(item.genres)) {
                 meta.genres = item.genres
                     .map(genre => typeof genre === 'object' ? genre.name || genre.label || genre : genre)
@@ -224,7 +250,6 @@ class CatalogTransformer {
                 if (meta.genres.length === 0) delete meta.genres;
             }
 
-            // Add rating
             const ratingSources = [
                 item.vote_average, item.rating?.average, item.score, 
                 item.imdb_rating, item.rating
@@ -237,7 +262,6 @@ class CatalogTransformer {
                 }
             }
 
-            // Remove undefined properties
             Object.keys(meta).forEach(key => meta[key] === undefined && delete meta[key]);
             return meta;
         } catch (error) {
