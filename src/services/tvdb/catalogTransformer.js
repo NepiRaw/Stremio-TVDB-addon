@@ -61,7 +61,8 @@ class CatalogTransformer {
             
             const chunkPromises = chunk.map(async (meta) => {
                 try {
-                    const numericId = meta.id.replace('tvdb-', '');
+                    // Use the correct TVDB numeric ID, not extracted from meta.id
+                    const numericId = meta.tvdb_id || meta.id.replace('tvdb-', '');
                     
                     // Check cache first
                     const cachedValidation = await this.cacheService.getImdbValidation(meta.type, numericId);
@@ -114,7 +115,18 @@ class CatalogTransformer {
         try {
             const stremioType = item.type === 'movie' ? 'movie' : 'series';
             const numericId = this.extractNumericId(item.id);
-            const id = `tvdb-${numericId}`;
+            
+            // 🎯 CROSS-ADDON COMPATIBILITY: Extract external IDs and use IMDb as primary when available
+            const externalIds = this.contentFetcher.extractExternalIds(item);
+            
+            let id;
+            if (externalIds.imdb_id) {
+                id = externalIds.imdb_id;
+                console.log(`🔄 Catalog using IMDb ID ${id} as primary for cross-addon compatibility`);
+            } else {
+                id = `tvdb-${numericId}`;
+                console.log(`🔄 Catalog using TVDB format ${id} (no IMDb ID available)`);
+            }
 
             // Get translated name
             let selectedName = item.name || item.primary_title || 'Unknown Title';
@@ -137,8 +149,18 @@ class CatalogTransformer {
             const meta = {
                 id,
                 type: stremioType,
-                name: selectedName
+                name: selectedName,
+                
+                // Always include tvdb_id as separate field for reference
+                tvdb_id: numericId.toString()
             };
+            
+            // Add other external IDs (excluding imdb_id since it might be the primary ID)
+            Object.entries(externalIds).forEach(([key, value]) => {
+                if (key !== 'imdb_id' || id !== value) {
+                    meta[key] = value;
+                }
+            });
 
             // Get enhanced artwork including clearlogo for series
             if (stremioType === 'series') {

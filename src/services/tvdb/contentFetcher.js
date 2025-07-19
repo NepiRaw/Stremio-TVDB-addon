@@ -158,8 +158,10 @@ class ContentFetcher {
      * Extract IMDB ID from content data
      */
     extractImdbId(item) {
-        if (item.remoteIds && Array.isArray(item.remoteIds)) {
-            const imdbRemote = item.remoteIds.find(remote => 
+        if ((item.remoteIds && Array.isArray(item.remoteIds)) || 
+            (item.remote_ids && Array.isArray(item.remote_ids))) {
+            const remoteIds = item.remoteIds || item.remote_ids;
+            const imdbRemote = remoteIds.find(remote => 
                 remote.sourceName?.toLowerCase() === 'imdb' || 
                 remote.type === 2 || 
                 (remote.id && remote.id.startsWith('tt'))
@@ -187,8 +189,10 @@ class ContentFetcher {
             tvdb_id: item.id ? item.id.toString() : null
         };
         
-        if (item.remoteIds && Array.isArray(item.remoteIds)) {
-            item.remoteIds.forEach(remote => {
+        if ((item.remoteIds && Array.isArray(item.remoteIds)) || 
+            (item.remote_ids && Array.isArray(item.remote_ids))) {
+            const remoteIds = item.remoteIds || item.remote_ids;
+            remoteIds.forEach(remote => {
                 const sourceName = remote.sourceName?.toLowerCase();
                 const remoteId = remote.id;
                 

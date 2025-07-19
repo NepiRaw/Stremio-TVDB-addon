@@ -28,7 +28,8 @@ class TVDBService {
         this.metadataTransformer = new MetadataTransformer(
             this.contentFetcher, 
             this.translationService, 
-            this.artworkHandler
+            this.artworkHandler,
+            this.ratingService
         );
         
         // Initialize updates service for intelligent cache invalidation

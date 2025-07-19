@@ -63,7 +63,9 @@ async function metaHandler(req, res, tvdbService) {
                     });
                     
                     if (exactMatch) {
-                        tvdbId = exactMatch.id.toString();
+                        // Extract numeric ID from the search result ID (e.g., "series-79168" -> "79168")
+                        const rawTvdbId = exactMatch.id.toString();
+                        tvdbId = tvdbService.contentFetcher.extractNumericId(rawTvdbId);
                         console.log(`✅ Found TVDB ID ${tvdbId} for IMDb ID ${imdbId}`);
                     } else {
                         console.log(`❌ No exact IMDb match found for ${imdbId}`);

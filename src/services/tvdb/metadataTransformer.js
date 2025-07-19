@@ -30,10 +30,11 @@ const { validateImdbRequirement } = require('../../utils/imdbFilter');
 const { getEnhancedReleaseInfo } = require('../../utils/theatricalStatus');
 
 class MetadataTransformer {
-    constructor(contentFetcher, translationService, artworkHandler) {
+    constructor(contentFetcher, translationService, artworkHandler, ratingService = null) {
         this.contentFetcher = contentFetcher;
         this.translationService = translationService;
         this.artworkHandler = artworkHandler;
+        this.ratingService = ratingService;
     }
 
     /**
@@ -54,9 +55,17 @@ class MetadataTransformer {
             // Extract all external IDs for cross-referencing
             const externalIds = this.contentFetcher.extractExternalIds(item);
             
-            // Use TVDB ID as primary for this addon (maintains catalog compatibility)
-            // External IDs will be included separately for cross-addon linking
-            const primaryId = `tvdb-${numericId}`;
+            // 🎯 CROSS-ADDON COMPATIBILITY FIX:
+            // Use IMDb ID as primary when available (without prefix) for cross-addon watch state sync
+            // This ensures Stremio treats content with same IMDb ID as identical across addons
+            let primaryId;
+            if (externalIds.imdb_id) {
+                primaryId = externalIds.imdb_id;
+                console.log(`🔄 Using IMDb ID ${primaryId} as primary for cross-addon compatibility`);
+            } else {
+                primaryId = `tvdb-${numericId}`;
+                console.log(`🔄 No IMDb ID available, using TVDB format ${primaryId}`);
+            }
 
             // Base meta object with cross-reference IDs
             const meta = {
@@ -64,9 +73,16 @@ class MetadataTransformer {
                 type: stremioType,
                 name: item.name || 'Unknown Title',
                 
-                // Add all external IDs for cross-addon linking
-                ...externalIds
+                // Always include tvdb_id as separate field for reference
+                tvdb_id: numericId.toString()
             };
+            
+            // Add other external IDs (excluding imdb_id since it might be the primary ID)
+            Object.entries(externalIds).forEach(([key, value]) => {
+                if (key !== 'imdb_id' || primaryId !== value) {
+                    meta[key] = value;
+                }
+            });
 
             // Get translations
             await this.applyTranslations(meta, stremioType, numericId, tvdbLanguage, item);
@@ -75,7 +91,7 @@ class MetadataTransformer {
             await this.applyArtwork(meta, stremioType, numericId, tvdbLanguage, item);
 
             // Add basic metadata
-            this.addBasicMetadata(meta, item, tvdbLanguage);
+            await this.addBasicMetadata(meta, item, tvdbLanguage);
 
             // Add type-specific content
             if (stremioType === 'series') {
@@ -187,7 +203,7 @@ class MetadataTransformer {
     /**
      * Add basic metadata (year, genres, cast, etc.)
      */
-    addBasicMetadata(meta, item, tvdbLanguage = 'eng') {
+    async addBasicMetadata(meta, item, tvdbLanguage = 'eng') {
         // Enhanced release info with theatrical status FIRST (before year processing)
         this.addTheatricalReleaseInfo(meta, item, tvdbLanguage);
         
@@ -204,6 +220,9 @@ class MetadataTransformer {
 
         // Cast - with genre-based filtering
         this.addCastWithGenreFiltering(meta, item);
+
+        // IMDb Rating - Add enhanced rating from OMDB/imdbapi.dev
+        this.addEnhancedRating(meta, item);
 
         // Country
         if (item.originalCountry) {
@@ -340,13 +359,46 @@ class MetadataTransformer {
     }
 
     /**
-     * Add runtime information
+     * Add enhanced runtime information
      */
     addEnhancedRuntime(meta, item) {
         if (item.runtime) {
             meta.runtime = `${item.runtime} min`;
         } else if (item.averageRuntime) {
             meta.runtime = `${item.averageRuntime} min`;
+        }
+    }
+
+    /**
+     * Add enhanced IMDb rating from OMDB/imdbapi.dev
+     */
+    async addEnhancedRating(meta, item) {
+        // Only add rating if we have the rating service and an IMDb ID
+        if (!this.ratingService) {
+            return;
+        }
+
+        // Extract IMDb ID from external IDs
+        const externalIds = this.contentFetcher.extractExternalIds(item);
+        const imdbId = externalIds.imdb_id;
+        
+        if (!imdbId) {
+            console.log(`⭐ No IMDb ID available for rating lookup: ${meta.name}`);
+            return;
+        }
+
+        try {
+            // Get rating from service (this handles OMDB + fallback and caching)
+            const ratingData = await this.ratingService.getImdbRating(imdbId, meta.type);
+            
+            if (ratingData && ratingData.imdb_rating) {
+                meta.imdbRating = ratingData.imdb_rating;
+                console.log(`⭐ Enhanced rating for ${meta.name}: ${ratingData.imdb_rating}/10`);
+            } else {
+                console.log(`⭐ No rating available for ${meta.name} (${imdbId})`);
+            }
+        } catch (error) {
+            console.error(`⭐ Rating lookup failed for ${imdbId}:`, error.message);
         }
     }
 
@@ -463,11 +515,14 @@ class MetadataTransformer {
         // Build video entries with cross-addon compatible IDs
         const videoMap = new Map();
         for (const episode of airedEpisodes) {
+            // 🎯 CROSS-ADDON VIDEO ID SYNC:
             // Use IMDb format for video IDs when available (for cross-addon watch state sync)
-            // Otherwise fall back to TVDB format for this addon's episodes
+            // This ensures episode watch status syncs with other addons using same IMDb ID
             const videoId = externalIds.imdb_id ? 
                 `${externalIds.imdb_id}:${episode.seasonNumber}:${episode.number}` :
                 `${numericId}:${episode.seasonNumber}:${episode.number}`;
+            
+            console.log(`📹 Episode ${episode.seasonNumber}x${episode.number} video ID: ${videoId}`);
             
             if (!videoMap.has(videoId)) {
                 const { episodeName, episodeOverview } = this.translationService.getEpisodeTranslation(
@@ -507,8 +562,9 @@ class MetadataTransformer {
             delete meta.videos;
         }
         
+        // Use the primary ID (which is now IMDb ID when available)
         meta.behaviorHints = {
-            defaultVideoId: imdbId || meta.id,
+            defaultVideoId: meta.id,
             hasScheduledVideos: false
         };
     }
