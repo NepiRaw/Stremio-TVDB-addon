@@ -38,6 +38,9 @@ const tvdbService = new TVDBService(cacheService, ratingService);
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Serve built Vue frontend at root
+app.use(express.static(path.join(__dirname, 'public')));
+
 // Middleware
 app.use(cors());
 app.use(express.json());
@@ -47,7 +50,9 @@ app.use(requestLogger);
 app.use('/static', express.static(path.join(__dirname, 'src', 'static')));
 
 // Routes
-app.get('/', installationPageHandler);
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
 
 // Language-specific routes
 app.get('/:language/manifest.json', manifestHandler);
@@ -64,6 +69,13 @@ app.get('/meta/:type/:id.json', (req, res) => metaHandler(req, res, tvdbService)
 // Health check
 app.get('/health', (req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// API endpoint to expose server configuration to the frontend
+app.get('/api/config', (req, res) => {
+    res.json({
+        isTmdbConfigured: !!process.env.TMDB_API_KEY
+    });
 });
 
 // Admin authentication middleware
