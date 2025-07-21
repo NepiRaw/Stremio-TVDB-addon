@@ -8,9 +8,10 @@ const path = require('path');
 const manifestHandler = require('./src/handlers/manifestHandler');
 const catalogHandler = require('./src/handlers/catalogHandler');
 const metaHandler = require('./src/handlers/metaHandler');
-const installationPageHandler = require('./src/handlers/installationPageHandler');
+const CatalogConfigHandler = require('./src/handlers/catalogConfigHandler');
 const TVDBService = require('./src/services/tvdbService');
 const RatingService = require('./src/services/ratingService');
+const CatalogService = require('./src/services/catalog/catalogService');
 const { errorHandler } = require('./src/utils/errorHandler');
 const { requestLogger } = require('./src/utils/logger');
 const CacheFactory = require('./src/services/cache/cacheFactory');
@@ -35,6 +36,22 @@ try {
 // Create TVDB service instance with cache service and optional rating service
 const tvdbService = new TVDBService(cacheService, ratingService);
 
+// Initialize Catalog service (TMDB integration) if API key is available
+let catalogService = null;
+let catalogConfigHandler = null;
+
+if (process.env.TMDB_API_KEY) {
+    try {
+        catalogService = new CatalogService(tvdbService, cacheService);
+        catalogConfigHandler = new CatalogConfigHandler(catalogService);
+        console.log('📋 Catalog service initialized with TMDB integration');
+    } catch (error) {
+        console.error('❌ Failed to initialize Catalog service:', error.message);
+    }
+} else {
+    console.log('🔧 TMDB_API_KEY not configured - browsable catalogs disabled (search catalogs still available)');
+}
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -55,15 +72,15 @@ app.get('/', (req, res) => {
 });
 
 // Language-specific routes
-app.get('/:language/manifest.json', manifestHandler);
-app.get('/:language/catalog/:type/:id/:extra?.json', (req, res) => catalogHandler(req, res, tvdbService));
-app.get('/:language/catalog/:type/:id.json', (req, res) => catalogHandler(req, res, tvdbService)); // Query parameter support
+app.get('/:language/manifest.json', (req, res) => manifestHandler(req, res, catalogService));
+app.get('/:language/catalog/:type/:id/:extra?.json', (req, res) => catalogHandler(req, res, tvdbService, catalogService));
+app.get('/:language/catalog/:type/:id.json', (req, res) => catalogHandler(req, res, tvdbService, catalogService)); // Query parameter support
 app.get('/:language/meta/:type/:id.json', (req, res) => metaHandler(req, res, tvdbService));
 
 // Default routes (English)
-app.get('/manifest.json', manifestHandler);
-app.get('/catalog/:type/:id/:extra?.json', (req, res) => catalogHandler(req, res, tvdbService));
-app.get('/catalog/:type/:id.json', (req, res) => catalogHandler(req, res, tvdbService)); // Query parameter support
+app.get('/manifest.json', (req, res) => manifestHandler(req, res, catalogService));
+app.get('/catalog/:type/:id/:extra?.json', (req, res) => catalogHandler(req, res, tvdbService, catalogService));
+app.get('/catalog/:type/:id.json', (req, res) => catalogHandler(req, res, tvdbService, catalogService)); // Query parameter support
 app.get('/meta/:type/:id.json', (req, res) => metaHandler(req, res, tvdbService));
 
 // Health check
@@ -74,9 +91,48 @@ app.get('/health', (req, res) => {
 // API endpoint to expose server configuration to the frontend
 app.get('/api/config', (req, res) => {
     res.json({
-        isTmdbConfigured: !!process.env.TMDB_API_KEY
+        isTmdbConfigured: !!process.env.TMDB_API_KEY,
+        catalogsEnabled: !!catalogService
     });
 });
+
+// API endpoint to provide app configuration (version, base URL) to frontend
+app.get('/api/app-config', (req, res) => {
+    const { getBaseUrl } = require('./src/utils/urlBuilder');
+    const packageJson = require('./package.json');
+    const baseUrl = getBaseUrl(req);
+    
+    res.json({
+        version: packageJson.version,
+        baseUrl: baseUrl,
+        manifestUrlTemplate: `${baseUrl}/{{LANG}}/manifest.json`
+    });
+});
+
+// API endpoint to expose shared catalog configuration to frontend
+app.get('/api/catalog-defaults', (req, res) => {
+    const CATALOG_CONFIG = require('./src/config/catalogConfig');
+    res.json({
+        success: true,
+        defaultConfig: CATALOG_CONFIG.defaultConfig,
+        categories: CATALOG_CONFIG.categories,
+        contentTypes: CATALOG_CONFIG.contentTypes,
+        validation: CATALOG_CONFIG.validation,
+        ui: CATALOG_CONFIG.ui
+    });
+});
+
+// Catalog configuration API endpoints
+if (catalogConfigHandler) {
+    const routes = catalogConfigHandler.getRoutes();
+    
+    app.get('/api/catalog-config', routes.getCatalogConfig);
+    app.post('/api/catalog-config', routes.updateCatalogConfig);
+    app.delete('/api/catalog-config', routes.resetCatalogConfig);
+    app.get('/api/catalog-status', routes.getCatalogStatus);
+    
+    console.log('🔧 Catalog configuration API endpoints enabled');
+}
 
 // Admin authentication middleware
 const adminAuth = (req, res, next) => {

@@ -15,6 +15,9 @@ class HybridCacheService {
         this.translationCache = new Map();
         this.metadataCache = new Map();
         this.seasonCache = new Map();
+        this.tmdbCache = new Map(); // TMDB catalog and external ID cache
+        this.mappingCache = new Map(); // TMDB to TVDB mapping cache
+        this.catalogCache = new Map(); // Final transformed catalog results cache
         
         // L2 Cache: MongoDB (persistence)
         this.mongoClient = null;
@@ -28,7 +31,10 @@ class HybridCacheService {
             artwork: 14 * 24 * 60 * 60 * 1000, // 14 days
             translation: 3 * 24 * 60 * 60 * 1000, // 3 days
             metadata: 12 * 60 * 60 * 1000,     // 12 hours
-            season: 6 * 60 * 60 * 1000         // 6 hours
+            season: 6 * 60 * 60 * 1000,        // 6 hours
+            tmdb: 24 * 60 * 60 * 1000,         // 24 hours (TMDB catalog data)
+            mapping: 7 * 24 * 60 * 60 * 1000,   // 7 days (TMDB to TVDB mappings)
+            catalog: 24 * 60 * 60 * 1000        // 24 hours (final catalog results)
         };
         
         // MongoDB collection mapping
@@ -38,7 +44,10 @@ class HybridCacheService {
             artwork: 'cache_artwork',
             translation: 'cache_translation',
             metadata: 'cache_metadata',
-            season: 'cache_season'
+            season: 'cache_season',
+            tmdb: 'cache_tmdb',
+            mapping: 'cache_mapping',
+            catalog: 'cache_catalog'
         };
         
         // Initialize MongoDB connection if URI is available
@@ -115,7 +124,10 @@ class HybridCacheService {
             'artwork': this.artworkCache,
             'translation': this.translationCache,
             'metadata': this.metadataCache,
-            'season': this.seasonCache
+            'season': this.seasonCache,
+            'tmdb': this.tmdbCache,
+            'mapping': this.mappingCache,
+            'catalog': this.catalogCache
         };
         return cacheMappers[cacheType];
     }

@@ -2,9 +2,9 @@ const packageJson = require('../../package.json');
 const { buildCatalogUrl, buildMetaUrl } = require('./urlBuilder');
 
 /**
- * Generate Stremio addon manifest with TVDB language support
+ * Generate Stremio addon manifest with TVDB language support and dynamic catalog configuration
  */
-function getManifest(tvdbLanguage = 'eng', req) {
+function getManifest(tvdbLanguage = 'eng', req, catalogService, configString) {
     // Map TVDB language codes to human-readable names
     const languageNames = {
         'eng': 'English',
@@ -25,11 +25,50 @@ function getManifest(tvdbLanguage = 'eng', req) {
     const finalLanguage = isValidTvdbLanguage ? tvdbLanguage : 'eng';
     const languageDisplayName = languageNames[finalLanguage] || 'English';
     
+    // Build catalog list
+    const catalogs = [];
+    
+    // Always include legacy search-based catalogs
+    catalogs.push(
+        {
+            type: 'movie',
+            id: 'tvdb-movies',
+            name: 'TVDB - Movies (Search)',
+            extra: [
+                {
+                    name: 'search',
+                    isRequired: true
+                }
+            ]
+        },
+        {
+            type: 'series',
+            id: 'tvdb-series', 
+            name: 'TVDB - Series & Anime (Search)',
+            extra: [
+                {
+                    name: 'search',
+                    isRequired: true
+                }
+            ]
+        }
+    );
+    
+    // Add dynamic browsable catalogs if catalog service is available
+    if (catalogService) {
+        try {
+            const enabledCatalogs = catalogService.getEnabledCatalogs(configString);
+            catalogs.push(...enabledCatalogs);
+        } catch (error) {
+            console.warn('Failed to get enabled catalogs:', error.message);
+        }
+    }
+    
     return {
         id: `community.stremio.tvdb-addon-${finalLanguage}`,
         version: packageJson.version,
         name: `TVDB Catalog (${languageDisplayName})`,
-        description: `Search TVDB for movies, series, and anime with ${languageDisplayName} language preference. Provides comprehensive catalog search functionality with metadata in your preferred language.`,
+        description: `Search TVDB and browse popular content with ${languageDisplayName} language preference. Provides comprehensive search and browsable catalogs with metadata in your preferred language.`,
         
         // Resources this addon provides
         resources: ['catalog', 'meta'],
@@ -40,31 +79,8 @@ function getManifest(tvdbLanguage = 'eng', req) {
         // ID prefixes this addon can handle
         idPrefixes: ['tvdb-', 'tt'],
         
-        // Catalog definitions - search-only catalogs
-        catalogs: [
-            {
-                type: 'movie',
-                id: 'tvdb-movies',
-                name: 'Movies',
-                extra: [
-                    {
-                        name: 'search',
-                        isRequired: true
-                    }
-                ]
-            },
-            {
-                type: 'series',
-                id: 'tvdb-series', 
-                name: 'Series & Anime',
-                extra: [
-                    {
-                        name: 'search',
-                        isRequired: true
-                    }
-                ]
-            }
-        ],
+        // Dynamic catalog definitions
+        catalogs: catalogs,
         
         behaviorHints: {
             configurable: false,

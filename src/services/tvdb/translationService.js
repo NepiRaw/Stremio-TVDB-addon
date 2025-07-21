@@ -103,39 +103,70 @@ class TranslationService {
     }
 
     /**
-     * Get bulk episode translations with fallback
+     * Fetch all pages of episode translations for a given language.
+     * @private
+     */
+    async _fetchAllEpisodeTranslations(seriesId, language) {
+        let allEpisodes = [];
+        let page = 0;
+        while (true) {
+            try {
+                const response = await this.apiClient.makeRequest(`/series/${seriesId}/episodes/default/${language}`, { page });
+                const episodes = response?.data?.episodes || [];
+                if (episodes.length === 0) {
+                    break; // No more pages
+                }
+                allEpisodes = allEpisodes.concat(episodes);
+                console.log(`... fetched page ${page} (${episodes.length} episodes) for ${language} for series ${seriesId}`);
+                page++;
+            } catch (error) {
+                console.warn(`Failed to fetch page ${page} of episode translations for series ${seriesId} (${language}):`, error.message);
+                // If a page fails (e.g., 404), it's likely the end of pages for that language.
+                break;
+            }
+        }
+        return allEpisodes.length > 0 ? allEpisodes : null;
+    }
+
+    /**
+     * Get bulk episode translations with fallback, now with pagination support.
      */
     async getBulkEpisodeTranslations(seriesId, tvdbLanguage) {
         const translations = { primary: null, fallback: null };
         
+        // Check cache first
+        const cachedTranslations = await this.cacheService.getTranslation('series', seriesId, tvdbLanguage, 'bulk-episodes');
+        if (cachedTranslations) {
+            console.log(`💾 Bulk translations cache HIT for series ${seriesId} (${tvdbLanguage})`);
+            return cachedTranslations;
+        }
+
         try {
-            // Get primary language
-            const primaryResponse = await this.apiClient.makeRequest(`/series/${seriesId}/episodes/default/${tvdbLanguage}`);
-            translations.primary = primaryResponse?.data?.episodes || null;
+            console.log(`🌍 Fetching all pages of episode translations for series ${seriesId} (${tvdbLanguage})...`);
+            translations.primary = await this._fetchAllEpisodeTranslations(seriesId, tvdbLanguage);
             
-            // Get English fallback if not requesting English
+            // Fetch English fallback if not requesting English
             if (tvdbLanguage !== 'eng') {
-                try {
-                    const fallbackResponse = await this.apiClient.makeRequest(`/series/${seriesId}/episodes/default/eng`);
-                    translations.fallback = fallbackResponse?.data?.episodes || null;
-                } catch (fallbackError) {
-                    // Fallback failure is not critical
-                }
+                console.log(`🌍 Fetching English fallback episode translations for series ${seriesId}...`);
+                translations.fallback = await this._fetchAllEpisodeTranslations(seriesId, 'eng');
+            } else {
+                // If we are requesting English, the primary is the fallback
+                translations.fallback = translations.primary;
+            }
+
+            // If primary fetch failed completely, but we're not asking for English, try setting primary to the fallback.
+            if (!translations.primary && tvdbLanguage !== 'eng' && translations.fallback) {
+                console.log(`⚠️ Primary language '${tvdbLanguage}' failed, using 'eng' as primary.`);
+                translations.primary = translations.fallback;
             }
         } catch (error) {
-            console.log(`⚠️ Bulk episode translation failed: ${error.message}`);
-            
-            // Try English if primary language failed
-            if (tvdbLanguage !== 'eng') {
-                try {
-                    const engResponse = await this.apiClient.makeRequest(`/series/${seriesId}/episodes/default/eng`);
-                    translations.primary = engResponse?.data?.episodes || null;
-                } catch (engError) {
-                    // Both failed, return empty
-                }
-            }
+            // This catch is more of a safety net; errors are handled inside the fetch helper.
+            console.log(`⚠️ An unexpected error occurred during bulk episode translation fetching: ${error.message}`);
         }
         
+        // Cache the result (even if partial/failed to avoid re-fetching)
+        await this.cacheService.setTranslation('series', seriesId, tvdbLanguage, 'bulk-episodes', translations);
+
         return translations;
     }
 

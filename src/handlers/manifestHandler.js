@@ -3,12 +3,15 @@ const { getManifest } = require('../utils/manifest');
 /**
  * Handle manifest.json requests with optional TVDB language parameter
  */
-async function manifestHandler(req, res) {
+async function manifestHandler(req, res, catalogService) {
     try {
         // Extract TVDB language code from URL parameter (e.g., /fra/manifest.json)
         const tvdbLanguage = req.params.language || 'eng';
         
-        const manifest = getManifest(tvdbLanguage, req);
+        // Extract configuration from query parameters
+        const configString = req.query.config;
+        
+        const manifest = getManifest(tvdbLanguage, req, catalogService, configString);
         res.json(manifest);
     } catch (error) {
         console.error('Error serving manifest:', error);

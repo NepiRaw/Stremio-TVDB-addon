@@ -116,24 +116,39 @@ class CatalogTransformer {
             const numericId = this.extractNumericId(item.id);
             const id = `tvdb-${numericId}`;
 
-            // Get translated name
-            let selectedName = item.name || item.primary_title || 'Unknown Title';
-            if (item.translations && Object.keys(item.translations).length > 0) {
-                const translatedName = this.translationService.selectPreferredTranslation(
-                    item.translations, userLanguage
-                );
-                if (translatedName) selectedName = translatedName;
+            // Get language-specific translated name with proper fallback chain
+            let selectedName = await this.getLanguageSpecificName(item, stremioType, numericId, userLanguage);
+            
+            // Fallback to item fields if no translation found
+            if (!selectedName || selectedName === 'Unknown Title') {
+                selectedName = item.name || item.primary_title || item.title || item.original_title || 'Unknown Title';
+                
+                // Apply translations if available in item data
+                if (item.translations && Object.keys(item.translations).length > 0) {
+                    const translatedName = this.translationService.selectPreferredTranslation(
+                        item.translations, userLanguage
+                    );
+                    if (translatedName) selectedName = translatedName;
+                }
             }
 
-            // Get translated description
-            let selectedDescription = item.overview;
-            if (item.overviews && Object.keys(item.overviews).length > 0) {
-                const translatedDescription = this.translationService.selectPreferredTranslation(
-                    item.overviews, userLanguage
-                );
-                if (translatedDescription) selectedDescription = translatedDescription;
+            // Get language-specific translated description  
+            let selectedDescription = await this.getLanguageSpecificDescription(item, stremioType, numericId, userLanguage);
+            
+            // Fallback to item description if no translation found
+            if (!selectedDescription && item.overview) {
+                selectedDescription = item.overview;
+                
+                // Apply translations if available in item data
+                if (item.overviews && Object.keys(item.overviews).length > 0) {
+                    const translatedDescription = this.translationService.selectPreferredTranslation(
+                        item.overviews, userLanguage
+                    );
+                    if (translatedDescription) selectedDescription = translatedDescription;
+                }
             }
 
+            // Build enhanced meta object with Discovery-compatible fields
             const meta = {
                 id,
                 type: stremioType,
@@ -241,6 +256,9 @@ class CatalogTransformer {
                 meta.description = selectedDescription;
             }
 
+            // Add enhanced metadata for Discovery section display
+            await this.addEnhancedCatalogMetadata(meta, item, stremioType, numericId, userLanguage);
+
             if (item.genres && Array.isArray(item.genres)) {
                 meta.genres = item.genres
                     .map(genre => typeof genre === 'object' ? genre.name || genre.label || genre : genre)
@@ -279,6 +297,237 @@ class CatalogTransformer {
             return match ? match[1] : id;
         }
         return id;
+    }
+
+    /**
+     * Get language-specific name with proper fallback chain
+     */
+    async getLanguageSpecificName(item, stremioType, numericId, userLanguage) {
+        if (!userLanguage || userLanguage === 'eng') {
+            return null; // Use item fallback
+        }
+
+        try {
+            const entityType = stremioType === 'movie' ? 'movies' : 'series';
+            const { translation } = await this.translationService.getContentTranslation(
+                entityType, numericId, userLanguage
+            );
+            
+            if (translation && translation.name && translation.name.trim()) {
+                console.log(`🌐 Using ${userLanguage} title for ${numericId}: ${translation.name}`);
+                return translation.name;
+            }
+        } catch (error) {
+            console.log(`🌐 Translation error for ${numericId}: ${error.message}`);
+        }
+
+        return null; // Fall back to item fields
+    }
+
+    /**
+     * Get language-specific description with proper fallback chain
+     */
+    async getLanguageSpecificDescription(item, stremioType, numericId, userLanguage) {
+        if (!userLanguage || userLanguage === 'eng') {
+            return item.overview || null;
+        }
+
+        try {
+            const entityType = stremioType === 'movie' ? 'movies' : 'series';
+            const { translation } = await this.translationService.getContentTranslation(
+                entityType, numericId, userLanguage
+            );
+            
+            if (translation && translation.overview && translation.overview.trim()) {
+                console.log(`🌐 Using ${userLanguage} description for ${numericId}`);
+                return translation.overview;
+            }
+        } catch (error) {
+            console.log(`🌐 Translation error for ${numericId}: ${error.message}`);
+        }
+
+        return item.overview || null;
+    }
+
+    /**
+     * Add enhanced metadata for Discovery section display
+     */
+    async addEnhancedCatalogMetadata(meta, item, stremioType, numericId, userLanguage) {
+        try {
+            // Add year information with enhanced logic
+            const yearSources = [
+                item.year,
+                item.first_air_time ? new Date(item.first_air_time).getFullYear() : null,
+                item.aired ? new Date(item.aired).getFullYear() : null,
+                item.first_aired ? new Date(item.first_aired).getFullYear() : null,
+                item.release_date ? new Date(item.release_date).getFullYear() : null
+            ];
+            
+            for (const year of yearSources) {
+                if (year && year > 1800 && year <= new Date().getFullYear() + 5) {
+                    meta.year = year;
+                    break;
+                }
+            }
+
+            // Add genre information
+            if (item.genres && Array.isArray(item.genres)) {
+                meta.genres = item.genres
+                    .map(genre => typeof genre === 'object' ? genre.name || genre.label || genre : genre)
+                    .filter(g => g && typeof g === 'string' && g.trim().length > 0)
+                    .map(g => g.trim());
+                
+                if (meta.genres.length === 0) delete meta.genres;
+            }
+
+            // Add rating information
+            const ratingSources = [
+                item.vote_average, item.rating?.average, item.score, 
+                item.imdb_rating, item.rating
+            ];
+            
+            for (const rating of ratingSources) {
+                if (rating && !isNaN(rating) && rating > 0) {
+                    meta.imdbRating = rating.toString();
+                    break;
+                }
+            }
+
+            // Add runtime information
+            if (item.runtime && item.runtime > 0) {
+                meta.runtime = `${item.runtime} min`;
+            } else if (item.episode_run_time && Array.isArray(item.episode_run_time) && item.episode_run_time.length > 0) {
+                meta.runtime = `${item.episode_run_time[0]} min`;
+            }
+
+            // Add release information for movies
+            if (stremioType === 'movie') {
+                if (item.release_date) {
+                    meta.released = new Date(item.release_date).toISOString();
+                } else if (item.first_air_date) {
+                    meta.released = new Date(item.first_air_date).toISOString();
+                }
+            }
+
+            // Add cast information (limited for catalog performance but more than before)
+            if (item.cast && Array.isArray(item.cast) && item.cast.length > 0) {
+                meta.cast = item.cast.slice(0, 8).map(castMember => 
+                    typeof castMember === 'object' ? castMember.name || castMember : castMember
+                ).filter(Boolean);
+            }
+
+            // Add director for movies (expanded to multiple directors)
+            if (stremioType === 'movie' && item.crew && Array.isArray(item.crew)) {
+                const directors = item.crew
+                    .filter(person => person.job === 'Director' || person.type === 'Director')
+                    .map(director => director.name || director)
+                    .filter(Boolean);
+                
+                if (directors.length > 0) {
+                    meta.director = directors;
+                }
+            }
+
+            // Add writer information
+            if (item.crew && Array.isArray(item.crew)) {
+                const writers = item.crew
+                    .filter(person => 
+                        person.job === 'Writer' || 
+                        person.job === 'Screenplay' || 
+                        person.job === 'Story' ||
+                        person.type === 'Writer'
+                    )
+                    .map(writer => writer.name || writer)
+                    .filter(Boolean)
+                    .slice(0, 3); // Limit to 3 writers for space
+                
+                if (writers.length > 0) {
+                    meta.writer = writers;
+                }
+            }
+
+            // Add country information
+            if (item.originalCountry) {
+                meta.country = [item.originalCountry];
+            } else if (item.country) {
+                meta.country = [item.country];
+            } else if (item.production_countries && Array.isArray(item.production_countries)) {
+                meta.country = item.production_countries
+                    .map(country => country.iso_3166_1 || country.name || country)
+                    .filter(Boolean)
+                    .slice(0, 3);
+            }
+
+            // Add language
+            if (item.originalLanguage) {
+                meta.language = item.originalLanguage;
+            } else if (item.original_language) {
+                meta.language = item.original_language;
+            }
+
+            // Add network for series
+            if (stremioType === 'series') {
+                if (item.originalNetwork?.name) {
+                    meta.network = item.originalNetwork.name;
+                } else if (item.latestNetwork?.name) {
+                    meta.network = item.latestNetwork.name;
+                } else if (item.network) {
+                    meta.network = item.network;
+                } else if (item.networks && Array.isArray(item.networks) && item.networks.length > 0) {
+                    meta.network = item.networks[0].name || item.networks[0];
+                }
+            }
+
+            // Add clearlogo for enhanced Discovery display (both series and movies)
+            await this.addClearlogoToMeta(meta, item, stremioType, numericId, userLanguage);
+
+            // Add awards and accolades if available
+            if (item.awards && Array.isArray(item.awards) && item.awards.length > 0) {
+                meta.awards = item.awards.slice(0, 3).map(award => award.name || award).filter(Boolean);
+            }
+
+            // Add status for series
+            if (stremioType === 'series' && item.status) {
+                meta.status = item.status;
+            }
+
+        } catch (error) {
+            console.log(`📊 Enhanced metadata error for ${meta.name}: ${error.message}`);
+        }
+    }
+
+    /**
+     * Add clearlogo to metadata for both series and movies
+     */
+    async addClearlogoToMeta(meta, item, stremioType, numericId, userLanguage) {
+        try {
+            if (stremioType === 'series') {
+                const artwork = await this.artworkHandler.getArtwork('series', numericId, this.translationService.mapToTvdbLanguage(userLanguage));
+                
+                if (artwork.logo) {
+                    meta.logo = artwork.logo;
+                    console.log(`🏷️ Added series clearlogo to catalog item: ${meta.name}`);
+                }
+            } else if (stremioType === 'movie') {
+                // For movies, try to get clearlogo from extended data
+                const movieData = await this.contentFetcher.getContentDetails('movie', numericId);
+                if (movieData && movieData.artworks) {
+                    const tvdbLanguage = this.translationService.mapToTvdbLanguage(userLanguage || 'eng');
+                    const { logoSources } = this.artworkHandler.getArtworkFallbacks(
+                        { ...item, artworks: movieData.artworks }, 
+                        'movie', 
+                        tvdbLanguage
+                    );
+                    
+                    if (logoSources.length > 0) {
+                        meta.logo = logoSources[0];
+                        console.log(`🏷️ Added movie clearlogo to catalog item: ${meta.name}`);
+                    }
+                }
+            }
+        } catch (error) {
+            console.log(`🎨 Clearlogo error for ${meta.name}: ${error.message}`);
+        }
     }
 }
 

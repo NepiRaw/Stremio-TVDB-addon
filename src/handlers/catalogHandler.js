@@ -18,10 +18,10 @@ function getLanguagePreference(req) {
 }
 
 /**
- * Handle catalog requests - provides search-based catalog results
+ * Handle catalog requests - provides both search-based and browsable catalog results
  * Route: /catalog/:type/:id/:extra?.json
  */
-async function catalogHandler(req, res, tvdbService) {
+async function catalogHandler(req, res, tvdbService, catalogService) {
     const startTime = Date.now();
     
     try {
@@ -43,41 +43,24 @@ async function catalogHandler(req, res, tvdbService) {
             return res.status(400).json({ error: 'Invalid content type' });
         }
 
-        // Validate catalog ID
-        const validCatalogIds = ['tvdb-movies', 'tvdb-series'];
-        if (!validCatalogIds.includes(id)) {
-            return res.status(400).json({ error: 'Invalid catalog ID' });
-        }
-
-        // Search is required for our catalogs
-        if (!extraParams.search || extraParams.search.trim() === '') {
-            return res.json({ metas: [] });
-        }
-
         // Extract user's preferred language
         const userLanguage = getLanguagePreference(req);
 
-        console.log(`🔍 Searching ${type} for: "${extraParams.search}" (language: ${userLanguage})`);
+        // Check if this is a search-based catalog (legacy TVDB catalogs)
+        const isSearchCatalog = ['tvdb-movies', 'tvdb-series'].includes(id);
+        
+        if (isSearchCatalog) {
+            // Handle legacy search-based catalogs
+            return await handleSearchCatalog(req, res, tvdbService, type, id, extraParams, userLanguage, startTime);
+        }
 
-        const searchStart = Date.now();
-        
-        // Search TVDB with language for caching
-        const searchResults = await tvdbService.search(extraParams.search, type, 20, userLanguage);
-        
-        const searchTime = Date.now() - searchStart;
-        console.log(`⚡ Search API call completed in ${searchTime}ms`);
-        
-        const transformStart = Date.now();
-        
-        // Transform results to Stremio format with user language preference
-        const metas = await tvdbService.transformSearchResults(searchResults, type, userLanguage);
+        // Handle browsable catalogs (TMDB-based)
+        if (catalogService && catalogService.isCatalogEnabled(id)) {
+            return await handleBrowsableCatalog(req, res, catalogService, type, id, extraParams, userLanguage, startTime);
+        }
 
-        const transformTime = Date.now() - transformStart;
-        const totalTime = Date.now() - startTime;
-        
-        console.log(`⚡ Transform completed in ${transformTime}ms (Total: ${totalTime}ms, Results: ${metas.length})`);
-
-        res.json({ metas });
+        // Unknown catalog ID
+        return res.status(404).json({ error: 'Catalog not found' });
 
     } catch (error) {
         const totalTime = Date.now() - startTime;
@@ -85,6 +68,66 @@ async function catalogHandler(req, res, tvdbService) {
         // Return empty results on error to avoid breaking Stremio
         res.json({ metas: [] });
     }
+}
+
+/**
+ * Handle legacy search-based catalogs (TVDB)
+ */
+async function handleSearchCatalog(req, res, tvdbService, type, id, extraParams, userLanguage, startTime) {
+    // Search is required for search-based catalogs
+    if (!extraParams.search || extraParams.search.trim() === '') {
+        return res.json({ metas: [] });
+    }
+
+    console.log(`🔍 Searching ${type} for: "${extraParams.search}" (language: ${userLanguage})`);
+
+    const searchStart = Date.now();
+    
+    // Search TVDB with language for caching
+    const searchResults = await tvdbService.search(extraParams.search, type, 20, userLanguage);
+    
+    const searchTime = Date.now() - searchStart;
+    console.log(`⚡ Search API call completed in ${searchTime}ms`);
+    
+    const transformStart = Date.now();
+    
+    // Transform results to Stremio format with user language preference
+    const metas = await tvdbService.transformSearchResults(searchResults, type, userLanguage);
+
+    const transformTime = Date.now() - transformStart;
+    const totalTime = Date.now() - startTime;
+    
+    console.log(`⚡ Transform completed in ${transformTime}ms (Total: ${totalTime}ms, Results: ${metas.length})`);
+
+    res.json({ metas });
+}
+
+/**
+ * Handle browsable catalogs (TMDB-based)
+ */
+async function handleBrowsableCatalog(req, res, catalogService, type, id, extraParams, userLanguage, startTime) {
+    // Parse pagination parameters
+    const skip = parseInt(extraParams.skip) || 0;
+    const limit = 20; // Fixed page size for consistency
+    const page = Math.floor(skip / limit) + 1;
+
+    console.log(`📋 Loading ${id} catalog (page ${page}, language: ${userLanguage})`);
+
+    const catalogStart = Date.now();
+    
+    // Get catalog data from TMDB with TVDB enrichment
+    const catalogData = await catalogService.getCatalog(id, userLanguage, page, limit);
+    
+    const catalogTime = Date.now() - catalogStart;
+    const totalTime = Date.now() - startTime;
+    
+    console.log(`⚡ Catalog loaded in ${catalogTime}ms (Total: ${totalTime}ms, Results: ${catalogData.metas.length})`);
+
+    // Return in Stremio format
+    res.json({ 
+        metas: catalogData.metas,
+        cacheMaxAge: 3600 // Cache for 1 hour
+    });
 }
 
 /**

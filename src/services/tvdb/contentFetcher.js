@@ -116,26 +116,29 @@ class ContentFetcher {
      * Get series episodes
      */
     async getSeriesEpisodes(seriesId, seasonType = 'default') {
-        try {
-            // Check cache first - cache by series and season type
-            const cacheKey = `episodes:${seasonType}`;
-            const cachedEpisodes = await this.cacheService.getSeasonData(seriesId, cacheKey);
-            if (cachedEpisodes) {
-                console.log(`💾 Episodes cache HIT for series ${seriesId} (${seasonType})`);
-                return cachedEpisodes;
-            }
+    try {
+        const cacheKey = `episodes:${seasonType}`;
+        const cachedEpisodes = await this.cacheService.getSeasonData(seriesId, cacheKey);
+        if (cachedEpisodes) {
+            console.log(`💾 Episodes cache HIT for series ${seriesId} (${seasonType})`);
+            return cachedEpisodes;
+        }
 
-            const response = await this.apiClient.makeRequest(`/series/${seriesId}/episodes/${seasonType}`, { page: 0 });
+        let allEpisodes = [];
+        let page = 0;
+        while (true) {
+            const response = await this.apiClient.makeRequest(`/series/${seriesId}/episodes/${seasonType}`, { page });
             const episodes = response?.data?.episodes || [];
-            
-            // Cache the episodes data
-            await this.cacheService.setSeasonData(seriesId, cacheKey, episodes);
-            
-            console.log(`📺 Got ${episodes.length} episodes for series ${seriesId} (${seasonType}) - cached`);
-            return episodes;
+            if (episodes.length === 0) break;
+            allEpisodes = allEpisodes.concat(episodes);
+            page++;
+        }
+
+        await this.cacheService.setSeasonData(seriesId, cacheKey, allEpisodes);
+        console.log(`📺 Got ${allEpisodes.length} episodes for series ${seriesId} (${seasonType}) - cached`);
+        return allEpisodes;
         } catch (error) {
             console.error(`Series episodes error for ID ${seriesId}:`, error.message);
-            // Cache negative result
             await this.cacheService.setSeasonData(seriesId, `episodes:${seasonType}`, []);
             return [];
         }

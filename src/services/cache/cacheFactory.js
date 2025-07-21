@@ -20,7 +20,7 @@ class CacheFactory {
             case 'hybrid':
                 if (!mongoUri) {
                     console.warn('⚠️  CACHE_TYPE=hybrid but no MONGODB_URI found, falling back to memory cache');
-                    return InMemoryCacheService;
+                    return InMemoryCacheService; // Return singleton instance
                 }
                 console.log('🔄 Creating hybrid cache (L1: Memory + L2: MongoDB)');
                 return new HybridCacheService();
@@ -28,7 +28,7 @@ class CacheFactory {
             case 'mongodb':
                 if (!mongoUri) {
                     console.warn('⚠️  CACHE_TYPE=mongodb but no MONGODB_URI found, falling back to memory cache');
-                    return InMemoryCacheService;
+                    return InMemoryCacheService; // Return singleton instance
                 }
                 console.log('🗄️  Creating MongoDB-only cache');
                 return new HybridCacheService();
@@ -36,7 +36,7 @@ class CacheFactory {
             case 'memory':
             default:
                 console.log('💾 Creating in-memory cache');
-                return InMemoryCacheService;
+                return InMemoryCacheService; // Return singleton instance
         }
     }
     

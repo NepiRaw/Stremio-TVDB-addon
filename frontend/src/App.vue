@@ -203,7 +203,7 @@ export default {
     Notification
   },
   setup() {
-    const version = ref('{{VERSION}}')
+    const version = ref('Loading...')
     const selectedLanguage = ref('eng')
     const showAdvanced = ref(false)
     const activeTab = ref('movies')
@@ -211,6 +211,7 @@ export default {
     const isInstalling = ref(false)
     const shouldShowDropdownUp = ref(false)
     const isTmdbConfigured = ref(false)
+    const manifestUrlTemplate = ref('')
     
     const notification = reactive({
       show: false,
@@ -229,29 +230,103 @@ export default {
       { action: 'copy', icon: 'fas fa-copy', text: 'Copy Manifest URL' }
     ]
 
+    // Initialize with empty config, will be loaded from shared configuration
     const catalogConfigs = reactive({
-      movies: [
-        { id: 'movie-popular', name: 'Popular Movies', icon: 'fas fa-chart-line', enabled: true, tooltip: 'Show most popular movies based on viewership.' },
-        { id: 'movie-trending', name: 'Trending Movies', icon: 'fas fa-fire', enabled: true, tooltip: 'Show movies that are currently trending.' },
-        { id: 'movie-topRated', name: 'Top Rated Movies', icon: 'fas fa-trophy', enabled: true, tooltip: 'Show the highest-rated movies of all time.' },
-        { id: 'movie-latest', name: 'Latest Movies', icon: 'fas fa-clock', enabled: false, tooltip: 'Show the most recently released movies.' },
-        { id: 'movie-discover', name: 'Discover Movies', icon: 'fas fa-compass', enabled: false, tooltip: 'Discover movies based on curated lists.' }
-      ],
-      series: [
-        { id: 'series-popular', name: 'Popular Series', icon: 'fas fa-chart-line', enabled: true, tooltip: 'Show most popular series based on viewership.' },
-        { id: 'series-trending', name: 'Trending Series', icon: 'fas fa-fire', enabled: true, tooltip: 'Show series that are currently trending.' },
-        { id: 'series-topRated', name: 'Top Rated Series', icon: 'fas fa-trophy', enabled: true, tooltip: 'Show the highest-rated series of all time.' },
-        { id: 'series-latest', name: 'Latest Series', icon: 'fas fa-clock', enabled: false, tooltip: 'Show the most recently released series.' },
-        { id: 'series-discover', name: 'Discover Series', icon: 'fas fa-compass', enabled: false, tooltip: 'Discover series based on curated lists.' }
-      ],
-      anime: [
-        { id: 'anime-popular', name: 'Popular Anime', icon: 'fas fa-chart-line', enabled: true, tooltip: 'Show most popular anime based on viewership.' },
-        { id: 'anime-trending', name: 'Trending Anime', icon: 'fas fa-fire', enabled: true, tooltip: 'Show anime that are currently trending.' },
-        { id: 'anime-topRated', name: 'Top Rated Anime', icon: 'fas fa-trophy', enabled: true, tooltip: 'Show the highest-rated anime of all time.' },
-        { id: 'anime-latest', name: 'Latest Anime', icon: 'fas fa-clock', enabled: false, tooltip: 'Show the most recently released anime.' },
-        { id: 'anime-discover', name: 'Discover Anime', icon: 'fas fa-compass', enabled: false, tooltip: 'Discover anime based on curated lists.' }
-      ]
+      movies: [],
+      series: [],
+      anime: [] // Keep anime for future implementation
     })
+
+    // Load shared configuration from server
+    const loadSharedConfig = async () => {
+      try {
+        const response = await fetch('/api/catalog-defaults');
+        if (response.ok) {
+          const sharedConfig = await response.json();
+          
+          // Update with shared configuration and add frontend-specific properties
+          catalogConfigs.movies = sharedConfig.defaultConfig.movies.map(catalog => ({
+            ...catalog,
+            icon: getIconForCategory(catalog.category),
+            tooltip: getTooltipForCatalog(catalog.category, 'movie')
+          }));
+          
+          catalogConfigs.series = sharedConfig.defaultConfig.series.map(catalog => ({
+            ...catalog,
+            icon: getIconForCategory(catalog.category),
+            tooltip: getTooltipForCatalog(catalog.category, 'series')
+          }));
+          
+          console.log('📋 Loaded shared catalog configuration from server');
+        } else {
+          console.warn('Failed to load shared config, using fallback');
+          loadFallbackConfig();
+        }
+      } catch (error) {
+        console.error('Error loading shared config:', error);
+        loadFallbackConfig();
+      }
+    }
+
+    // Fallback configuration if server is unavailable
+    const loadFallbackConfig = () => {
+      catalogConfigs.movies = [
+        { id: 'movie-popular', name: 'Popular Movies', category: 'popular', enabled: true, order: 1, icon: 'fas fa-chart-line', tooltip: 'Show most popular movies based on viewership.' },
+        { id: 'movie-trending', name: 'Trending Movies', category: 'trending', enabled: true, order: 2, icon: 'fas fa-fire', tooltip: 'Show movies that are currently trending.' },
+        { id: 'movie-toprated', name: 'Top Rated Movies', category: 'top_rated', enabled: true, order: 3, icon: 'fas fa-trophy', tooltip: 'Show the highest-rated movies of all time.' },
+        { id: 'movie-latest', name: 'Latest Movies', category: 'latest', enabled: false, order: 4, icon: 'fas fa-clock', tooltip: 'Show the most recently released movies.' },
+        { id: 'movie-discover', name: 'Discover Movies', category: 'discover', enabled: false, order: 5, icon: 'fas fa-compass', tooltip: 'Discover movies based on curated lists.' }
+      ];
+      catalogConfigs.series = [
+        { id: 'series-popular', name: 'Popular Series', category: 'popular', enabled: true, order: 1, icon: 'fas fa-chart-line', tooltip: 'Show most popular series based on viewership.' },
+        { id: 'series-trending', name: 'Trending Series', category: 'trending', enabled: true, order: 2, icon: 'fas fa-fire', tooltip: 'Show series that are currently trending.' },
+        { id: 'series-toprated', name: 'Top Rated Series', category: 'top_rated', enabled: true, order: 3, icon: 'fas fa-trophy', tooltip: 'Show the highest-rated series of all time.' },
+        { id: 'series-latest', name: 'Latest Series', category: 'latest', enabled: false, order: 4, icon: 'fas fa-clock', tooltip: 'Show the most recently released series.' },
+        { id: 'series-discover', name: 'Discover Series', category: 'discover', enabled: false, order: 5, icon: 'fas fa-compass', tooltip: 'Discover series based on curated lists.' }
+      ];
+    }
+
+    // Helper functions for frontend-specific properties
+    const getIconForCategory = (category) => {
+      const iconMap = {
+        popular: 'fas fa-chart-line',
+        trending: 'fas fa-fire', 
+        top_rated: 'fas fa-trophy',
+        latest: 'fas fa-clock',
+        discover: 'fas fa-compass'
+      };
+      return iconMap[category] || 'fas fa-film';
+    }
+
+    const getTooltipForCatalog = (category, type) => {
+      const tooltipMap = {
+        popular: `Show most popular ${type}s based on viewership.`,
+        trending: `Show ${type}s that are currently trending.`,
+        top_rated: `Show the highest-rated ${type}s of all time.`,
+        latest: `Show the most recently released ${type}s.`,
+        discover: `Discover ${type}s based on curated lists.`
+      };
+      return tooltipMap[category] || `Browse ${type}s in this category.`;
+    }
+
+    // Load app configuration (version, manifest URL template)
+    const loadAppConfig = async () => {
+      try {
+        const response = await fetch('/api/app-config');
+        if (response.ok) {
+          const config = await response.json();
+          version.value = config.version;
+          manifestUrlTemplate.value = config.manifestUrlTemplate;
+          console.log('📱 Loaded app configuration from server');
+        } else {
+          console.warn('Failed to load app config');
+          version.value = 'Unknown';
+        }
+      } catch (error) {
+        console.error('Error loading app config:', error);
+        version.value = 'Error';
+      }
+    }
 
     const checkTmdbConfig = async () => {
         try {
@@ -268,7 +343,7 @@ export default {
             console.error('Failed to fetch server config:', error);
             isTmdbConfigured.value = false;
         }
-    };
+    }
 
     const getStorageKey = (type, key) => `tvdb-addon-${type}-${key}`
 
@@ -346,12 +421,14 @@ export default {
     }
 
     const getManifestUrl = () => {
-      const manifestUrlTemplate = '{{MANIFEST_URL}}'
+      if (!manifestUrlTemplate.value) return ''
+      
       const configString = generateConfigString()
       
-      let url = manifestUrlTemplate.replace('{{LANG}}', selectedLanguage.value)
+      let url = manifestUrlTemplate.value.replace('{{LANG}}', selectedLanguage.value)
       if (configString) {
-        url = url.replace('/manifest.json', `/${configString}/manifest.json`)
+        // Pass configuration as query parameter instead of URL path
+        url += `?config=${encodeURIComponent(configString)}`
       }
       return url
     }
@@ -361,7 +438,9 @@ export default {
       Object.keys(catalogConfigs).forEach(type => {
         catalogConfigs[type].forEach((catalog, index) => {
           if (catalog.enabled) {
-            configs.push(`${catalog.id}:${index}`)
+            // Use the catalog's order property, or fallback to index + 1 to start from 1
+            const order = catalog.order || (index + 1)
+            configs.push(`${catalog.id}:${order}`)
           }
         })
       })
@@ -455,9 +534,11 @@ export default {
       }
     }
 
-    onMounted(() => {
+    onMounted(async () => {
+      await loadAppConfig()
+      await loadSharedConfig()
       loadInitialState()
-      checkTmdbConfig()
+      await checkTmdbConfig()
       document.addEventListener('click', handleClickOutside)
     })
 
