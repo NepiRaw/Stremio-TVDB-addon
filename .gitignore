@@ -123,3 +123,9 @@ dist
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+# Test environment
+tests
+
+# public
+public/assets
