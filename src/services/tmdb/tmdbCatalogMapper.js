@@ -229,12 +229,35 @@ class TMDBCatalogMapper {
 
         console.log(`🎭 Enriching ${mappedItems.length} items with TVDB metadata (parallel processing)`);
         
-        // Process all items in parallel with error handling
-        const enrichmentPromises = mappedItems.map(async ({ tmdbItem, tvdbId, externals }) => {
+        // Step 1: Fetch all full TVDB items in parallel for efficiency
+        const tvdbItems = await Promise.allSettled(
+            mappedItems.map(async ({ tvdbId }) => {
+                try {
+                    // Use your TVDB service to fetch the full item by ID
+                    // Prefer series or movie based on type
+                    if (type === 'series') {
+                        return await this.tvdbService.getSeriesDetails(tvdbId);
+                    } else {
+                        return await this.tvdbService.getMovieDetails(tvdbId);
+                    }
+                } catch (error) {
+                    console.warn(`Failed to fetch full TVDB item for ${tvdbId}:`, error.message);
+                    return null;
+                }
+            })
+        );
+        // Map to only fulfilled results
+        const fullTvdbItems = tvdbItems.map((result, idx) => result.status === 'fulfilled' ? result.value : null);
+
+        // Step 2: Enrich with detailed metadata in parallel
+        const enrichmentPromises = mappedItems.map(async ({ tmdbItem, tvdbId, externals }, idx) => {
+            const fullTvdbItem = fullTvdbItems[idx];
+            if (!fullTvdbItem) return null;
             try {
-                // Use existing TVDB transformation logic with caching
-                const tvdbMeta = await this.tvdbService.transformSearchItemToStremioMeta(
-                    { id: tvdbId, type, tmdbData: tmdbItem }, // Pass TMDB data
+                const tvdbMeta = await this.tvdbService.transformDetailedToStremioMeta(
+                    fullTvdbItem,
+                    type,
+                    null, // No seasonsData for catalog
                     userLanguage
                 );
                 
@@ -247,18 +270,28 @@ class TMDBCatalogMapper {
                         tvdbMeta.name = tmdbItem.title || tmdbItem.name;
                         console.log(`📝 Used TMDB title for ${tvdbMeta.id}: ${tvdbMeta.name}`);
                     }
-                    
-                    return tvdbMeta;
+
+                    // Map to catalog meta preview (strip full-meta-only fields)
+                    const previewFields = [
+                        'id', 'type', 'name', 'poster', 'genres', 'year', 'description',
+                        'background', 'logo', 'runtime', 'cast', 'director', 'imdb_id',
+                        'country', 'language', 'network', 'released', 'imdbRating',
+                        'videos', 'seasons'
+                    ];
+                    const catalogMeta = {};
+                    for (const key of previewFields) {
+                        if (tvdbMeta[key] !== undefined) {
+                            catalogMeta[key] = tvdbMeta[key];
+                        }
+                    }
+                    return catalogMeta;
                 }
-                
                 return null;
-                
             } catch (error) {
                 console.warn(`Failed to enrich TVDB metadata for ${tvdbId}:`, error.message);
                 return null;
             }
         });
-        
         // Execute all enrichment operations in parallel
         const results = await Promise.allSettled(enrichmentPromises);
         const enrichedItems = results
