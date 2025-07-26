@@ -120,7 +120,19 @@ class TMDBCatalogMapper {
         
         const searchPromises = itemsNeedingSearch.map(async ({ tmdbItem, externals }) => {
             try {
-                // Get title from TMDB item
+                // Try remote_id lookup first if IMDb ID is available
+                const imdbId = externals?.imdb_id || tmdbItem.imdb_id;
+                if (imdbId) {
+                    const remoteResult = await this.tvdbService.getByRemoteId(imdbId, type);
+                    if (remoteResult && remoteResult.id) {
+                        const mappingKey = `mapping:tmdb:${tmdbItem.id}:type:${type}`;
+                        await this.setCachedMapping(mappingKey, { tvdbId: remoteResult.id, confidence: 'remoteid' }, 7 * 24 * 60 * 60 * 1000);
+                        console.log(`✅ Found TVDB match by IMDb ID for "${tmdbItem.title || tmdbItem.name}": ${remoteResult.id}`);
+                        return { tmdbItem, tvdbId: remoteResult.id, externals };
+                    }
+                }
+
+                // Fallback: Get title from TMDB item
                 const title = tmdbItem.title || tmdbItem.name || '';
                 if (!title) {
                     console.log(`⚠️ No title found for TMDB item ${tmdbItem.id}`);

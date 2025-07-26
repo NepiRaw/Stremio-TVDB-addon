@@ -119,7 +119,7 @@ class RatingService {
                 const ratingData = {
                     source: 'imdbapi.dev',
                     imdb_rating: parseFloat(data.rating.aggregateRating),
-                    imdb_votes: data.rating.ratingCount || null,
+                    imdb_votes: data.rating.voteCount || null,
                     plot: data.plot || null,
                     runtime: data.runtimeMinutes ? `${data.runtimeMinutes} min` : null,
                     genre: data.genres?.join(', ') || null,
@@ -155,7 +155,7 @@ class RatingService {
                 const ratingData = {
                     source: 'imdbapi.dev',
                     imdb_rating: parseFloat(result.rating.aggregateRating),
-                    imdb_votes: result.rating.ratingCount || null,
+                    imdb_votes: result.rating.voteCount || null,
                     fetched_at: new Date().toISOString()
                 };
                 
@@ -183,7 +183,6 @@ class RatingService {
         }
 
         const cacheKey = `rating:${imdbId}`;
-        
         // Try to get from cache first
         try {
             const cachedData = await this.cacheService.getCachedData('metadata', cacheKey);
@@ -197,25 +196,22 @@ class RatingService {
 
         // Try OMDB first if API key is available
         let ratingData = await this.getOMDbRating(imdbId);
-        
-        // Fallback to imdbapi.dev if OMDB failed
-        if (!ratingData) {
+
+        // Fallback to imdbapi.dev if OMDB failed OR returned no rating
+        if (!ratingData || ratingData.imdb_rating == null) {
             ratingData = await this.getIMDbApiDevRating(imdbId, contentType);
         }
 
         // Cache the result
         const TTL = ratingData ? (7 * 24 * 60 * 60) : (60 * 60); // 7 days for success, 1 hour for failure
-        
+
         if (ratingData) {
             await this.cacheService.setCachedData('metadata', cacheKey, ratingData, TTL);
             logger.debug(`Cached rating for ${imdbId}: ${ratingData.imdb_rating}/10 (source: ${ratingData.source})`);
-            
-            // Cache external IDs separately if available
             if (ratingData.external_ids) {
                 await this.cacheExternalIds(ratingData.external_ids, imdbId, 30 * 24 * 60 * 60); // 30 days
             }
         } else {
-            // Cache negative result to avoid repeated lookups
             const emptyResult = { notFound: true };
             await this.cacheService.setCachedData('metadata', cacheKey, emptyResult, TTL);
             logger.debug(`Cached negative result for ${imdbId}`);

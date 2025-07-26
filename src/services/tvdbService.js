@@ -199,6 +199,30 @@ class TVDBService {
     }
 
     /**
+     * Fetch TVDB entry by remote IMDb ID using the correct v4 endpoint
+     */
+    async getByRemoteId(imdbId, type = 'series') {
+        if (!imdbId) return null;
+        try {
+            const response = await this.makeRequest(`/search/remoteid/${imdbId}`);
+            if (response && response.data && response.data.length > 0) {
+                // TVDB returns an array of objects, each with a 'movie' or 'series' property
+                for (const item of response.data) {
+                    if (type === 'movie' && item.movie) return item.movie;
+                    if (type === 'series' && item.series) return item.series;
+                }
+                // Fallback: return the first available movie or series
+                if (response.data[0].movie) return response.data[0].movie;
+                if (response.data[0].series) return response.data[0].series;
+            }
+            return null;
+        } catch (error) {
+            console.error(`Failed to fetch TVDB by remote ID (${imdbId}):`, error.message);
+            return null;
+        }
+    }
+
+    /**
      * Clear all caches (for testing and debugging)
      */
     clearCache() {
