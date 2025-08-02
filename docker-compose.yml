@@ -1,0 +1,19 @@
+# Docker Compose for TVDB Stremio Addon
+version: '3.8'
+
+services:
+
+  stremio-tvdb-addon:
+    image: NepiRaw/Stremio-TVDB-addon:latest
+    container_name: stremio-tvdb-addon
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s

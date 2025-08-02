@@ -9,23 +9,26 @@ src/
 │   ├── manifestHandler.js
 │   ├── metaHandler.js
 │   └── installationPageHandler.js
-├── services/          # Core services
-│   ├── tvdbService.js        # Main TVDB integration
-│   ├── cacheService.js       # Enhanced 7-tier caching
-│   └── tvdb/                 # TVDB-specific modules
-│       ├── updatesService.js     # Intelligent updates monitoring
-│       ├── contentFetcher.js     # Content retrieval
-│       ├── catalogTransformer.js # Catalog transformation
-│       ├── metadataTransformer.js # Metadata processing
-│       ├── translationService.js # Multi-language support
-│       └── artworkHandler.js     # Artwork management
-├── templates/         # HTML templates
+├── services/           # Core services
+│   ├── tvdbService.js              # Main TVDB integration
+│   └── cache/                      # Enhanced caching (inMemoryCacheService.js, hybridCacheService.js, cacheFactory.js, etc.)
+│   └── tvdb/                       # TVDB-specific modules
+│       ├── updatesService.js           # Intelligent updates monitoring
+│       ├── contentFetcher.js           # Content retrieval
+│       ├── catalogTransformer.js       # Catalog transformation
+│       ├── metadataTransformer.js      # Metadata processing
+│       ├── translationService.js       # Multi-language support
+│       └── artworkHandler.js           # Artwork management
+├── templates/            # HTML templates
 │   └── installationPage.js
-├── utils/            # Utility functions
+├── utils/                # Utility functions
 │   ├── manifest.js
 │   ├── errorHandler.js
-│   └── logger.js
-└── static/           # Static assets
+│   ├── logger.js
+│   └── ...
+public/
+├── index.html            # Main static entry point
+└── assets/               # Static assets (CSS, JS, images)
 ```
 
 ## Enhanced Architecture
@@ -169,22 +172,14 @@ curl -H "X-Admin-Key: your-key" http://localhost:3000/admin/updates/status
    - Monitor cache statistics for optimization
    - Set up alerts for updates service failures
 
+
 ## Future Enhancements
 
-### MongoDB Caching (TODO)
+# MongoDB Caching
 
-Plans for adding MongoDB caching:
+MongoDB-based hybrid caching is now implemented and is the recommended approach for production deployments. The cache system uses a 7-tier architecture with L1 (memory) and L2 (MongoDB) for persistence and scalability. See the README and CACHING_STRATEGY.md for details.
 
-```javascript
-// Example caching structure
-const cacheSchema = {
-    tvdbId: String,
-    type: String, // 'movie' or 'series'
-    data: Object, // Full TVDB response
-    lastUpdated: Date,
-    expiresAt: Date
-};
-```
+### Performance Optimizations
 
 ### Performance Optimizations
 
@@ -200,11 +195,6 @@ Run tests with:
 npm test
 ```
 
-Current test coverage:
-- Manifest generation
-- Basic error handling
-- TODO: API integration tests
-- TODO: Handler integration tests
 
 ## Deployment
 
@@ -214,13 +204,23 @@ npm install
 npm run dev
 ```
 
-### Production
+### Production (Recommended: Docker Compose)
+
+For production deployments, use the provided Docker Compose setup as described in the README:
+
 ```bash
-npm install --production
-npm start
+# Clone the repository
+git clone https://github.com/NepiRaw/Stremio-TVDB-addon.git
+cd Stremio-TVDB-addon
+cp .env.example .env
+# Edit .env with your production configuration
+docker-compose up -d
 ```
+
+This will launch the addon using the prebuilt image with all dependencies included. MongoDB caching is enabled by setting `MONGODB_URI` in your `.env` file.
 
 ### Environment Variables
 - `TVDB_API_KEY` - Required
 - `PORT` - Default: 3000
 - `NODE_ENV` - 'development' or 'production'
+- `MONGODB_URI` - Enables hybrid caching (recommended for production)

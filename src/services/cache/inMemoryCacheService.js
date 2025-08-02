@@ -5,93 +5,76 @@
  */
 
 class CacheService {
-    constructor() {
-        // Different caches for different data types
-        this.searchCache = new Map();           // Search results
-        this.imdbCache = new Map();            // IMDB validation
-        this.artworkCache = new Map();         // Artwork data (posters, backgrounds, etc.)
-        this.translationCache = new Map();     // Language translations
-        this.metadataCache = new Map();        // Full content metadata
-        this.seasonCache = new Map();          // Season/episode data
+    constructor(logger = null) {
+        this.logger = logger;
+        this.searchCache = new Map();
+        this.imdbCache = new Map();
+        this.artworkCache = new Map();
+        this.translationCache = new Map();
+        this.metadataCache = new Map();
+        this.seasonCache = new Map();
         
-        // Cache TTL configurations (optimized for different data types)
         this.CACHE_TTLS = {
-            search: 2 * 60 * 60 * 1000,        // 2 hours - searches are popular, but results can change
-            imdb: 7 * 24 * 60 * 60 * 1000,     // 7 days - IMDB IDs + metadata rarely change
-            artwork: 14 * 24 * 60 * 60 * 1000, // 14 days - artwork is very static
-            translation: 3 * 24 * 60 * 60 * 1000, // 3 days - translations rarely update
-            metadata: 12 * 60 * 60 * 1000,     // 12 hours - basic metadata updates infrequently
-            season: 6 * 60 * 60 * 1000         // 6 hours - episodes update occasionally
+            search: 2 * 60 * 60 * 1000,             // 2 hours - searches are popular, but results can change
+            imdb: 7 * 24 * 60 * 60 * 1000,          // 7 days - IMDB IDs + metadata rarely change
+            artwork: 14 * 24 * 60 * 60 * 1000,      // 14 days - artwork is very static
+            translation: 3 * 24 * 60 * 60 * 1000,   // 3 days - translations rarely update
+            metadata: 12 * 60 * 60 * 1000,          // 12 hours - basic metadata updates infrequently
+            season: 6 * 60 * 60 * 1000              // 6 hours - episodes update occasionally
         };
         
         // Future /updates endpoint configuration
         this.UPDATES_CHECK_INTERVAL = 12 * 60 * 60 * 1000; // 12 hours - adjustable sync interval
         
-        // Start cleanup interval
         this.startCleanupInterval();
     }
 
-    /**
-     * Generic cache getter (future-proof for MongoDB)
-     */
     getCachedData(cacheMap, key) {
         const cached = cacheMap.get(key);
-        
-        if (cached && Date.now() < cached.expiry) {
-            console.log(`💾 Cache HIT: ${key}`);
+        const now = Date.now();
+        if (cached) {
+            this.logger?.debug(`⏱️ Checking cache for key: ${key} | now: ${now} | expiry: ${cached.expiry} | ttl(ms) left: ${cached.expiry - now}`);
+        }
+        if (cached && now < cached.expiry) {
+            this.logger?.debug(`💾 Cache:HIT: ${key}`);
             return cached.data;
         }
-        
         if (cached) {
-            cacheMap.delete(key); // Remove expired entry
+            this.logger?.debug(`🗑️ Cache EXPIRED: ${key} | now: ${now} | expiry: ${cached.expiry}`);
+            cacheMap.delete(key);
         }
-        
-        console.log(`🔍 Cache MISS: ${key}`);
+        this.logger?.debug(`🔍 Cache:MISS: ${key}`);
         return null;
     }
 
-    /**
-     * Generic cache setter (future-proof for MongoDB)
-     */
     setCachedData(cacheMap, key, data, ttl) {
+        const now = Date.now();
+        const expiry = now + ttl;
         const entry = {
             data: data,
-            expiry: Date.now() + ttl,
-            timestamp: Date.now(),
+            expiry: expiry,
+            timestamp: now,
             type: this.getCacheTypeFromKey(key)
         };
-        
         cacheMap.set(key, entry);
-        console.log(`💾 Cached data: ${key} (TTL: ${Math.round(ttl / 60000)}min)`);
+        this.logger?.debug(`💾 Cached data: ${key} | now: ${now} | expiry: ${expiry} | ttl(ms): ${ttl} | ttl(min): ${Math.round(ttl / 60000)}`);
     }
 
-    /**
-     * Helper to identify cache type from key (useful for MongoDB migration)
-     */
     getCacheTypeFromKey(key) {
         return key.split(':')[0];
     }
 
     // ==================== SEARCH CACHE ====================
 
-    /**
-     * Generate cache key for search queries
-     */
     generateSearchKey(query, type, language = 'eng') {
         return `search:${type}:${language}:${query.toLowerCase().trim()}`;
     }
 
-    /**
-     * Get cached search results
-     */
     getSearchResults(query, type, language = 'eng') {
         const key = this.generateSearchKey(query, type, language);
         return this.getCachedData(this.searchCache, key);
     }
 
-    /**
-     * Cache search results
-     */
     setSearchResults(query, type, language = 'eng', results) {
         const key = this.generateSearchKey(query, type, language);
         this.setCachedData(this.searchCache, key, results, this.CACHE_TTLS.search);
@@ -99,24 +82,15 @@ class CacheService {
 
     // ==================== IMDB CACHE ====================
 
-    /**
-     * Generate cache key for IMDB validation
-     */
     generateImdbKey(contentType, contentId) {
         return `imdb:${contentType}:${contentId}`;
     }
 
-    /**
-     * Get cached IMDB validation result
-     */
     getImdbValidation(contentType, contentId) {
         const key = this.generateImdbKey(contentType, contentId);
         return this.getCachedData(this.imdbCache, key);
     }
 
-    /**
-     * Cache IMDB validation result
-     */
     setImdbValidation(contentType, contentId, isValid, detailData = null) {
         const key = this.generateImdbKey(contentType, contentId);
         this.setCachedData(this.imdbCache, key, { isValid, detailData }, this.CACHE_TTLS.imdb);
@@ -124,24 +98,15 @@ class CacheService {
 
     // ==================== ARTWORK CACHE ====================
 
-    /**
-     * Generate cache key for artwork
-     */
     generateArtworkKey(contentType, contentId, artworkType = 'all') {
         return `artwork:${contentType}:${contentId}:${artworkType}`;
     }
 
-    /**
-     * Get cached artwork data
-     */
     getArtwork(contentType, contentId, artworkType = 'all') {
         const key = this.generateArtworkKey(contentType, contentId, artworkType);
         return this.getCachedData(this.artworkCache, key);
     }
 
-    /**
-     * Cache artwork data
-     */
     setArtwork(contentType, contentId, artworkType = 'all', artworkData) {
         const key = this.generateArtworkKey(contentType, contentId, artworkType);
         this.setCachedData(this.artworkCache, key, artworkData, this.CACHE_TTLS.artwork);
@@ -149,24 +114,15 @@ class CacheService {
 
     // ==================== TRANSLATION CACHE ====================
 
-    /**
-     * Generate cache key for translations
-     */
     generateTranslationKey(contentType, contentId, language, dataType = 'all') {
         return `translation:${contentType}:${contentId}:${language}:${dataType}`;
     }
 
-    /**
-     * Get cached translation data
-     */
     getTranslation(contentType, contentId, language, dataType = 'all') {
         const key = this.generateTranslationKey(contentType, contentId, language, dataType);
         return this.getCachedData(this.translationCache, key);
     }
 
-    /**
-     * Cache translation data
-     */
     setTranslation(contentType, contentId, language, dataType = 'all', translationData) {
         const key = this.generateTranslationKey(contentType, contentId, language, dataType);
         this.setCachedData(this.translationCache, key, translationData, this.CACHE_TTLS.translation);
@@ -174,24 +130,15 @@ class CacheService {
 
     // ==================== METADATA CACHE ====================
 
-    /**
-     * Generate cache key for metadata
-     */
     generateMetadataKey(contentType, contentId, language = null) {
         return language ? `metadata:${contentType}:${contentId}:${language}` : `metadata:${contentType}:${contentId}`;
     }
 
-    /**
-     * Get cached metadata
-     */
     getMetadata(contentType, contentId, language = null) {
         const key = this.generateMetadataKey(contentType, contentId, language);
         return this.getCachedData(this.metadataCache, key);
     }
 
-    /**
-     * Cache metadata
-     */
     setMetadata(contentType, contentId, language = null, metadata) {
         const key = this.generateMetadataKey(contentType, contentId, language);
         this.setCachedData(this.metadataCache, key, metadata, this.CACHE_TTLS.metadata);
@@ -199,24 +146,15 @@ class CacheService {
 
     // ==================== SEASON CACHE ====================
 
-    /**
-     * Generate cache key for season data
-     */
     generateSeasonKey(seriesId, seasonNumber = null) {
         return seasonNumber ? `season:${seriesId}:${seasonNumber}` : `seasons:${seriesId}`;
     }
 
-    /**
-     * Get cached season data
-     */
     getSeasonData(seriesId, seasonNumber = null) {
         const key = this.generateSeasonKey(seriesId, seasonNumber);
         return this.getCachedData(this.seasonCache, key);
     }
 
-    /**
-     * Cache season data
-     */
     setSeasonData(seriesId, seasonNumber = null, seasonData) {
         const key = this.generateSeasonKey(seriesId, seasonNumber);
         this.setCachedData(this.seasonCache, key, seasonData, this.CACHE_TTLS.season);
@@ -224,9 +162,6 @@ class CacheService {
 
     // ==================== CACHE MANAGEMENT ====================
 
-    /**
-     * Clear all caches
-     */
     clearAll() {
         const counts = {
             search: this.searchCache.size,
@@ -244,12 +179,9 @@ class CacheService {
         this.metadataCache.clear();
         this.seasonCache.clear();
         
-        console.log(`🗑️ Cleared all caches:`, counts);
+        this.logger?.info(`🗑️ Cleared all caches:`, counts);
     }
 
-    /**
-     * Clear cache entries by pattern (useful for selective invalidation)
-     */
     clearByPattern(pattern) {
         let totalRemoved = 0;
         
@@ -276,28 +208,22 @@ class CacheService {
             });
             
             if (keysToDelete.length > 0) {
-                console.log(`🧹 Cleared ${keysToDelete.length} entries from ${cache.name} cache matching pattern: ${pattern}`);
+                this.logger?.info(`🧹 Cleared ${keysToDelete.length} entries from ${cache.name} cache matching pattern: ${pattern}`);
             }
         });
 
         return totalRemoved;
     }
 
-    /**
-     * Clear specific cache type
-     */
     clearCacheType(cacheType) {
         const cacheMap = this.getCacheMap(cacheType);
         if (cacheMap) {
             const count = cacheMap.size;
             cacheMap.clear();
-            console.log(`🗑️ Cleared ${cacheType} cache: ${count} entries`);
+            this.logger?.info(`🗑️ Cleared ${cacheType} cache: ${count} entries`);
         }
     }
 
-    /**
-     * Get cache map by type (helper for cache management)
-     */
     getCacheMap(cacheType) {
         const cacheMappers = {
             'search': this.searchCache,
@@ -310,9 +236,6 @@ class CacheService {
         return cacheMappers[cacheType];
     }
 
-    /**
-     * Get comprehensive cache statistics
-     */
     getStats() {
         return {
             searchEntries: this.searchCache.size,
@@ -327,13 +250,10 @@ class CacheService {
         };
     }
 
-    /**
-     * Clean up expired entries from all caches
-     */
     cleanup() {
         const now = Date.now();
         let totalRemoved = 0;
-        
+
         const cacheTypes = [
             { name: 'search', map: this.searchCache },
             { name: 'imdb', map: this.imdbCache },
@@ -345,34 +265,32 @@ class CacheService {
 
         cacheTypes.forEach(cache => {
             let removed = 0;
+            let expiredKeys = [];
             for (const [key, entry] of cache.map.entries()) {
                 if (now >= entry.expiry) {
+                    expiredKeys.push({ key, expiry: entry.expiry, setAt: entry.timestamp });
                     cache.map.delete(key);
                     removed++;
                 }
             }
             if (removed > 0) {
-                console.log(`🧹 Cleaned ${cache.name} cache: ${removed} expired entries`);
+                expiredKeys.forEach(info => {
+                    this.logger?.debug(`🧹 [CLEANUP] Expired key: ${info.key} | expiry: ${info.expiry} | setAt: ${info.setAt} | now: ${now} | cache: ${cache.name}`);
+                });
+                this.logger?.debug(`🧹 Cleaned ${cache.name} cache: ${removed} expired entries`);
             }
             totalRemoved += removed;
         });
 
         if (totalRemoved > 0) {
-            console.log(`🧹 Total cleanup: ${totalRemoved} expired entries removed`);
+            this.logger?.info(`🧹 Total cleanup: ${totalRemoved} expired entries removed`);
         }
     }
 
-    /**
-     * Start automatic cleanup interval
-     */
     startCleanupInterval() {
-        // Clean up every 5 minutes
         setInterval(() => this.cleanup(), 5 * 60 * 1000);
-        console.log('🕐 Enhanced cache cleanup interval started (5 minutes)');
+        this.logger?.info('🕐 Enhanced cache cleanup interval started (5 minutes)');
     }
 }
 
-// Create singleton instance
-const cacheService = new CacheService();
-
-module.exports = cacheService;
+module.exports = CacheService;

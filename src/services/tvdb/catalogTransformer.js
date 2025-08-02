@@ -4,21 +4,17 @@
  */
 
 const { validateImdbRequirement } = require('../../utils/imdbFilter');
-// Note: This will be replaced by dependency injection in the constructor
 
 class CatalogTransformer {
-    constructor(contentFetcher, translationService, artworkHandler, cacheService) {
+    constructor(contentFetcher, translationService, artworkHandler, cacheService, logger) {
         this.contentFetcher = contentFetcher;
         this.translationService = translationService;
         this.artworkHandler = artworkHandler;
         this.cacheService = cacheService;
+        this.logger = logger;
     }
 
-    /**
-     * Transform search results to catalog format with parallel IMDB filtering
-     */
     async transformSearchResults(results, type, userLanguage = null) {
-        // Step 1: Basic filtering and transformation
         const basicFiltered = results.filter(item => {
             if (type === 'movie' && item.type !== 'movie') return false;
             if (type === 'series' && item.type !== 'series') return false;
@@ -29,7 +25,6 @@ class CatalogTransformer {
             return [];
         }
 
-        // Step 2: Transform to Stremio format in parallel
         const transformPromises = basicFiltered.map(item => 
             this.transformSearchItemToStremioMeta(item, userLanguage)
         );
@@ -42,20 +37,15 @@ class CatalogTransformer {
             return [];
         }
 
-        // Step 3: Apply IMDB filtering with chunked parallel processing
         const imdbFilteredResults = await this.processIMDBValidationInChunks(transformedResults);
         
-        console.log(`🎬 IMDB catalog filtering: ${transformedResults.length} → ${imdbFilteredResults.length} results`);
+        this.logger?.debug?.(`IMDB catalog filtering: ${transformedResults.length} → ${imdbFilteredResults.length} results`);
         return imdbFilteredResults;
     }
 
-    /**
-     * Process IMDB validation in chunks with caching to control API load
-     */
     async processIMDBValidationInChunks(transformedResults, chunkSize = 8) {
         const results = [];
         
-        // Process in chunks to avoid overwhelming the API
         for (let i = 0; i < transformedResults.length; i += chunkSize) {
             const chunk = transformedResults.slice(i, i + chunkSize);
             
@@ -63,35 +53,30 @@ class CatalogTransformer {
                 try {
                     const numericId = meta.id.replace('tvdb-', '');
                     
-                    // Check cache first
                     const cachedValidation = await this.cacheService.getImdbValidation(meta.type, numericId);
                     if (cachedValidation !== null) {
                         if (cachedValidation.isValid === true) {
                             return meta;
                         } else if (cachedValidation.isValid === false) {
-                            console.log(`💾 "${meta.name}" - Cached as invalid, excluded from catalog`);
+                        this.logger?.debug?.(`"${meta.name}" - Cached as invalid, excluded from catalog`);
                             return null;
                         } else {
-                            // isValid is null - treat as cache miss and fetch fresh data
-                            console.log(`🔄 "${meta.name}" - Cached validation is null, re-validating`);
+                            this.logger?.debug?.(`"${meta.name}" - Cached validation is null, re-validating`);
                         }
                     }
                     
-                    // Not in cache, fetch from API
                     const detailedData = await this.contentFetcher.getContentDetails(meta.type, numericId);
                     const isValid = detailedData && validateImdbRequirement(detailedData, meta.type);
                     
-                    // Cache the result
                     await this.cacheService.setImdbValidation(meta.type, numericId, isValid, detailedData);
                     
                     if (isValid) {
                         return meta;
                     } else {
-                        console.log(`🚫 "${meta.name}" - No IMDB ID, excluded from catalog`);
+                        this.logger?.debug?.(`"${meta.name}" - No IMDB ID, excluded from catalog`);
                         return null;
                     }
                 } catch (error) {
-                    // Skip items that fail validation
                     return null;
                 }
             });
@@ -107,16 +92,12 @@ class CatalogTransformer {
         return results;
     }
 
-    /**
-     * Transform search item to Stremio meta format
-     */
     async transformSearchItemToStremioMeta(item, userLanguage = null) {
         try {
             const stremioType = item.type === 'movie' ? 'movie' : 'series';
             const numericId = this.extractNumericId(item.id);
             const id = `tvdb-${numericId}`;
 
-            // Get translated name
             let selectedName = item.name || item.primary_title || 'Unknown Title';
             if (item.translations && Object.keys(item.translations).length > 0) {
                 const translatedName = this.translationService.selectPreferredTranslation(
@@ -125,7 +106,6 @@ class CatalogTransformer {
                 if (translatedName) selectedName = translatedName;
             }
 
-            // Get translated description
             let selectedDescription = item.overview;
             if (item.overviews && Object.keys(item.overviews).length > 0) {
                 const translatedDescription = this.translationService.selectPreferredTranslation(
@@ -140,7 +120,6 @@ class CatalogTransformer {
                 name: selectedName
             };
 
-            // Get enhanced artwork including clearlogo for both series and movies
             if (stremioType === 'series') {
                 try {
                     const artwork = await this.artworkHandler.getArtwork('series', numericId, this.translationService.mapToTvdbLanguage(userLanguage));
@@ -151,27 +130,23 @@ class CatalogTransformer {
                     
                     if (artwork.logo) {
                         meta.logo = artwork.logo;
-                        console.log(`🏷️ Added clearlogo to catalog item: ${selectedName}`);
+                        this.logger?.debug?.(`Added clearlogo to catalog item: ${selectedName}`);
                     }
                 } catch (error) {
-                    console.log(`🎨 Artwork error for ${selectedName}: ${error.message}`);
+                    this.logger?.debug?.(`Artwork error for ${selectedName}: ${error.message}`);
                 }
             } else if (stremioType === 'movie') {
-                // For movies, fetch extended data to get artworks for language-aware selection
                 try {
                     const movieData = await this.contentFetcher.getContentDetails('movie', numericId);
                     if (movieData && movieData.artworks) {
-                        // Add artworks to item so language-aware selection can work
                         item.artworks = movieData.artworks;
                     }
                 } catch (error) {
-                    console.log(`🎨 Movie artwork fetch error for ${selectedName}: ${error.message}`);
+                    this.logger?.debug?.(`Movie artwork fetch error for ${selectedName}: ${error.message}`);
                 }
             }
 
-            // Add poster fallbacks if not already set - use language-aware selection
             if (!meta.poster) {
-                // Use language-aware poster selection if artworks available
                 if (item.artworks && item.artworks.length > 0) {
                     const { posterSources } = this.artworkHandler.getArtworkFallbacks(
                         item, 
@@ -183,7 +158,6 @@ class CatalogTransformer {
                         meta.poster = posterSources[0];
                     }
                 } else {
-                    // Fallback to basic sources only if no artworks available
                     const posterSources = [
                         item.image_url, item.poster, item.image, item.thumbnail
                     ].filter(Boolean);
@@ -194,7 +168,6 @@ class CatalogTransformer {
                 }
             }
 
-            // Add year
             const yearSources = [
                 item.year,
                 item.first_air_time ? new Date(item.first_air_time).getFullYear() : null,
@@ -209,7 +182,6 @@ class CatalogTransformer {
                 }
             }
 
-            // Add theatrical status and release info for movies
             if (stremioType === 'movie') {
                 try {
                     const { getEnhancedReleaseInfo } = require('../../utils/theatricalStatus');
@@ -233,7 +205,7 @@ class CatalogTransformer {
                         }
                     }
                 } catch (error) {
-                    console.log(`🎬 Theatrical status error for ${selectedName}: ${error.message}`);
+                    this.logger?.debug?.(`Theatrical status error for ${selectedName}: ${error.message}`);
                 }
             }
 
@@ -265,14 +237,11 @@ class CatalogTransformer {
             Object.keys(meta).forEach(key => meta[key] === undefined && delete meta[key]);
             return meta;
         } catch (error) {
-            console.error('Error transforming search item:', error);
+            this.logger?.error?.('Error transforming search item:', error);
             return null;
         }
     }
 
-    /**
-     * Extract numeric ID from TVDB ID format
-     */
     extractNumericId(id) {
         if (typeof id === 'string') {
             const match = id.match(/(\d+)$/);

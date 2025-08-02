@@ -1,43 +1,22 @@
 const packageJson = require('../../package.json');
 const { buildCatalogUrl, buildMetaUrl } = require('./urlBuilder');
+const { isValidTvdbLanguage, getDisplayName, DEFAULT_LANGUAGE } = require('./languageMap');
 
-/**
- * Generate Stremio addon manifest with TVDB language support
- */
-function getManifest(tvdbLanguage = 'eng', req) {
-    // Map TVDB language codes to human-readable names
-    const languageNames = {
-        'eng': 'English',
-        'fra': 'Français',
-        'spa': 'Español', 
-        'deu': 'Deutsch',
-        'ita': 'Italiano',
-        'por': 'Português',
-        'jpn': '日本語',
-        'kor': '한국어',
-        'chi': '中文',
-        'rus': 'Русский',
-        'ara': 'العربية'
-    };
-    
-    // Validate TVDB language code
-    const isValidTvdbLanguage = /^[a-z]{3}$/.test(tvdbLanguage) && languageNames[tvdbLanguage];
-    const finalLanguage = isValidTvdbLanguage ? tvdbLanguage : 'eng';
-    const languageDisplayName = languageNames[finalLanguage] || 'English';
+function getManifest(tvdbLanguage = DEFAULT_LANGUAGE, req) {
+    const isValidLanguage = isValidTvdbLanguage(tvdbLanguage);
+    const finalLanguage = isValidLanguage ? tvdbLanguage : DEFAULT_LANGUAGE;
+    const languageDisplayName = getDisplayName(finalLanguage);
     
     return {
         id: `community.stremio.tvdb-addon-${finalLanguage}`,
         version: packageJson.version,
-        name: `TVDB Catalog (${languageDisplayName})`,
+        name: `TVDB Search (${languageDisplayName})`,
         description: `Search TVDB for movies, series, and anime with ${languageDisplayName} language preference. Provides comprehensive catalog search functionality with metadata in your preferred language.`,
         
-        // Resources this addon provides
         resources: ['catalog', 'meta'],
         
-        // Content types supported
         types: ['movie', 'series'],
         
-        // ID prefixes this addon can handle
         idPrefixes: ['tvdb-', 'tt'],
         
         // Catalog definitions - search-only catalogs
@@ -45,7 +24,7 @@ function getManifest(tvdbLanguage = 'eng', req) {
             {
                 type: 'movie',
                 id: 'tvdb-movies',
-                name: 'Movies',
+                name: 'TVDB - Movies (Search)',
                 extra: [
                     {
                         name: 'search',
@@ -56,7 +35,7 @@ function getManifest(tvdbLanguage = 'eng', req) {
             {
                 type: 'series',
                 id: 'tvdb-series', 
-                name: 'Series & Anime',
+                name: 'TVDB - Series & Anime (Search)',
                 extra: [
                     {
                         name: 'search',
@@ -71,8 +50,7 @@ function getManifest(tvdbLanguage = 'eng', req) {
             configurationRequired: false
         },
         
-        // Additional metadata
-        contactEmail: 'addon@example.com',
+        contactEmail: 'https://github.com/NepiRaw/Stremio-TVDB-addon',
         logo: 'https://thetvdb.com/images/logo.png',
         background: 'https://thetvdb.com/images/background.jpg'
     };

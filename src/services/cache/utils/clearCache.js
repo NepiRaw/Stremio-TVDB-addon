@@ -1,3 +1,8 @@
+/**
+ * Clear Cache tool
+ * This script connects to MongoDB and allows you to view and clear cache collections.
+ */
+
 const { MongoClient } = require('mongodb');
 const readline = require('readline');
 require('dotenv').config();
@@ -16,7 +21,6 @@ async function clearCache() {
 
         const db = client.db(dbName);
 
-        // List all collections and their item counts
         const collections = await db.listCollections().toArray();
         const collectionDetails = [];
 
@@ -26,7 +30,6 @@ async function clearCache() {
             console.log(`Collection: ${collection.name}, Items: ${count}`);
         }
 
-        // Prompt user for confirmation
         const rl = readline.createInterface({
             input: process.stdin,
             output: process.stdout
@@ -56,5 +59,4 @@ async function clearCache() {
     }
 }
 
-// Run the script
 clearCache();

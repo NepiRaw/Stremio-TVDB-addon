@@ -15,7 +15,6 @@ class L2CacheInspector {
         console.log('🔌 Connecting to MongoDB...');
         this.hybridCache = new HybridCacheService();
         
-        // Wait for connection
         await new Promise(resolve => setTimeout(resolve, 3000));
         
         if (!this.hybridCache.mongoConnected) {
@@ -150,7 +149,6 @@ async function main() {
     try {
         await inspector.initialize();
         
-        // Get command line arguments
         const args = process.argv.slice(2);
         const command = args[0] || 'summary';
         
@@ -194,7 +192,6 @@ async function main() {
     }
 }
 
-// Run if executed directly
 if (require.main === module) {
     main().then(() => process.exit(0));
 }

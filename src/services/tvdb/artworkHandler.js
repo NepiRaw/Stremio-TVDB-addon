@@ -4,73 +4,56 @@
  */
 
 class ArtworkHandler {
-    constructor(apiClient, cacheService) {
+    constructor(apiClient, cacheService, logger) {
         this.apiClient = apiClient;
         this.cacheService = cacheService;
+        this.logger = logger;
     }
 
-    /**
-     * Get optimized artwork for content including clearlogo
-     */
     async getArtwork(entityType, entityId, language = 'eng') {
         try {
-            // Check cache first
             const cacheKey = `${entityType}:${entityId}:${language}`;
             const cachedArtwork = await this.cacheService.getArtwork(entityType, entityId, language);
             if (cachedArtwork) {
-                console.log(`💾 Artwork cache HIT for ${entityType} ${entityId}`);
+                this.logger?.debug?.(`Artwork cache HIT for ${entityType} ${entityId}`);
                 return cachedArtwork;
             }
 
             if (entityType === 'movies' || entityType === 'movie') {
-                // Movies don't have artwork endpoint in TVDB API v4, fall back to basic sources
                 const result = { poster: null, background: null, logo: null };
-                // Cache the negative result to avoid repeated API calls
                 await this.cacheService.setArtwork(entityType, entityId, language, result);
                 return result;
             }
             
-            // Series use dedicated artwork endpoint
-            // Fetch ALL artworks (no language filter) to get best backgrounds
-            // Language filtering will be applied later for posters and clearlogos only
             const response = await this.apiClient.makeRequest(`/series/${entityId}/artworks`);
             
             const artworks = response?.data?.artworks || [];
             
             if (artworks.length === 0) {
                 const result = { poster: null, background: null, logo: null };
-                // Cache the negative result
                 await this.cacheService.setArtwork(entityType, entityId, language, result);
                 return result;
             }
             
             const result = this.selectOptimalArtwork(artworks, language);
             
-            // Add clearlogo selection  
             result.logo = this.selectBestClearlogo(artworks, language);
             
-            // Cache the artwork data
             await this.cacheService.setArtwork(entityType, entityId, language, result);
-            console.log(`🎨 Cached artwork for ${entityType} ${entityId}`);
-            
+            this.logger?.debug?.(`Cached artwork for ${entityType} ${entityId}`);
             return result;
         } catch (error) {
-            console.error(`❌ Artwork fetch error for ${entityType} ${entityId}:`, error.message);
-            // Cache negative result to avoid repeated failures
+            this.logger?.error?.(`Artwork fetch error for ${entityType} ${entityId}:`, error.message);
             const result = { poster: null, background: null, logo: null };
             await this.cacheService.setArtwork(entityType, entityId, language, result);
             return result;
         }
     }
 
-    /**
-     * Select optimal poster and background from artwork array
-     */
     selectOptimalArtwork(artworks, preferredLanguage = 'eng') {
         const posters = [];
         const backgrounds = [];
         
-        // Categorize artworks by type
         for (const art of artworks) {
             if (!art.image) continue;
             
@@ -152,7 +135,7 @@ class ArtworkHandler {
      * Fallback: clearlogo (pref lang) -> clearlogo (eng) -> clearlogo (any) -> null (plain text)
      */
     selectBestClearlogo(artworks, preferredLanguage = 'eng') {
-        // Filter for ONLY clearlogo artworks (type 23) - no clearart fallback
+        // Filter for ONLY clearlogo artworks (type 23)
         const clearlogos = artworks.filter(art => 
             art.type === 23 || art.type === '23' || 
             art.typeName?.toLowerCase().includes('clearlogo') ||
@@ -213,7 +196,7 @@ class ArtworkHandler {
             item.fanart,
             item.backdrop,
             item.background,
-            item.image  // Final fallback
+            item.image  
         ].filter(Boolean);
 
         const logoSources = [
@@ -300,7 +283,7 @@ class ArtworkHandler {
 
     /**
      * Get type-specific clearlogo sources with proper fallback chain
-     * Only returns clearlogo (type 23), no clearart fallback
+     * Only returns clearlogo (type 23)
      */
     getTypeSpecificClearlogos(item, language = 'eng') {
         if (!item.artworks) return [];

@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>TVDB Catalog - Stremio Addon</title>
+    <link rel="icon" type="image/svg+xml" href="https://thetvdb.com/images/logo.svg">
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
@@ -302,6 +303,36 @@
             transform: translateX(0);
         }
 
+        .github-link {
+            margin-top: 30px;
+            text-align: center;
+        }
+
+        .github-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            background: #24292e;
+            color: #fff;
+            padding: 12px 24px;
+            border-radius: 25px;
+            font-size: 0.9rem;
+            font-weight: 500;
+            text-decoration: none;
+            transition: all 0.3s ease;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+        }
+
+        .github-badge:hover {
+            background: #2f363d;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        }
+
+        .github-badge i {
+            font-size: 1.2rem;
+        }
+
         .powered-by {
             margin-top: 30px;
             color: #A0A0A0;
@@ -373,6 +404,11 @@
                 right: 0;
             }
 
+            .github-badge {
+                font-size: 0.8rem;
+                padding: 10px 20px;
+            }
+
             .api-badges {
                 flex-direction: column;
                 align-items: center;
@@ -408,11 +444,11 @@
     <div class="container">
         <img src="https://thetvdb.com/images/logo.svg" alt="TVDB Logo" class="logo">
         
-        <h1>TVDB Catalog</h1>
+        <h1>TVDB Search</h1>
         <div class="version" id="version">Version {{VERSION}}</div>
         
         <div class="description">
-            A comprehensive Stremio addon that brings you the vast library of The TV Database with detailed metadata for movies, series, and anime.
+            A comprehensive Stremio addon that searches and brings you the vast library of The TV Database with detailed metadata for movies, series, and anime.
         </div>
 
         <div class="features">
@@ -442,17 +478,6 @@
                     </span>
                 </label>
                 <select id="languageSelect" class="language-select">
-                    <option value="eng" selected>English - Default</option>
-                    <option value="fra">Français (French)</option>
-                    <option value="spa">Español (Spanish)</option>
-                    <option value="deu">Deutsch (German)</option>
-                    <option value="ita">Italiano (Italian)</option>
-                    <option value="por">Português (Portuguese)</option>
-                    <option value="jpn">日本語 (Japanese)</option>
-                    <option value="kor">한국어 (Korean)</option>
-                    <option value="chi">中文 (Chinese)</option>
-                    <option value="rus">Русский (Russian)</option>
-                    <option value="ara">العربية (Arabic)</option>
                 </select>
             </div>
         </div>
@@ -477,11 +502,11 @@
             </div>
         </div>
 
-        <div class="powered-by">
-            <div>Powered by</div>
-            <div class="api-badges">
-                <span class="badge">TVDB API</span>
-            </div>
+        <div class="github-link">
+            <a href="https://github.com/NepiRaw/Stremio-TVDB-addon" target="_blank" class="github-badge">
+                <i class="fab fa-github"></i>
+                <span>View on GitHub</span>
+            </a>
         </div>
     </div>
 
@@ -500,7 +525,35 @@
             const languageSelect = document.getElementById('languageSelect');
             const container = document.querySelector('.container');
 
-            // Animation on load
+            async function loadLanguageOptions() {
+                try {
+                    const response = await fetch('/api/languages');
+                    const languages = await response.json();
+                    languageSelect.innerHTML = '';
+
+                    const savedLanguage = localStorage.getItem('preferredLanguage') || 'eng';
+
+                    languages.forEach(lang => {
+                        const option = document.createElement('option');
+                        option.value = lang.value;
+                        option.textContent = lang.label;
+                        if (lang.value === savedLanguage) {
+                            option.selected = true;
+                        }
+                        languageSelect.appendChild(option);
+                    });
+                } catch (error) {
+                    console.error('Failed to load language options:', error);
+                    languageSelect.innerHTML = '<option value="eng" selected>English</option>';
+                }
+            }
+
+            languageSelect.addEventListener('change', function() {
+                localStorage.setItem('preferredLanguage', languageSelect.value);
+            });
+
+            loadLanguageOptions();
+
             container.style.opacity = '0';
             container.style.transform = 'translateY(30px)';
             setTimeout(() => {
@@ -509,14 +562,12 @@
                 container.style.transform = 'translateY(0)';
             }, 100);
 
-            // Function to get manifest URL
             function getManifestUrl() {
                 const selectedLanguage = languageSelect.value;
                 const manifestUrlTemplate = '{{MANIFEST_URL}}';
                 return manifestUrlTemplate.replace('{{LANG}}', selectedLanguage);
             }
 
-            // Toggle dropdown
             dropdownToggle.addEventListener('click', function(e) {
                 console.log('Dropdown toggle clicked');
                 e.preventDefault();
@@ -524,25 +575,21 @@
                 dropdownMenu.classList.toggle('show');
             });
 
-            // Prevent dropdown from closing when clicking inside
             dropdownMenu.addEventListener('click', function(e) {
                 e.stopPropagation();
             });
 
-            // Close dropdown when clicking outside
             document.addEventListener('click', function(e) {
                 if (!dropdownMenu.contains(e.target) && !dropdownToggle.contains(e.target) && !mainInstallButton.contains(e.target)) {
                     dropdownMenu.classList.remove('show');
                 }
             });
 
-            // Handle main button click
             mainInstallButton.addEventListener('click', function(e) {
                 e.preventDefault();
                 handleInstallAction('install');
             });
 
-            // Handle dropdown item clicks
             document.querySelectorAll('.dropdown-item').forEach(item => {
                 item.addEventListener('click', function(e) {
                     console.log('Dropdown item clicked:', this.getAttribute('data-action'));
@@ -553,7 +600,6 @@
                 });
             });
 
-            // Handle installation actions
             function handleInstallAction(action) {
                 const manifestUrl = getManifestUrl();
                 const manifestHost = manifestUrl.replace(/^https?:\/\//, '');
@@ -580,7 +626,6 @@
                 }
             }
 
-            // Update button text and state
             function updateButtonState(text, isSuccess) {
                 mainInstallButton.innerHTML = text;
                 if (isSuccess) {
@@ -590,7 +635,6 @@
                 }
             }
 
-            // Show notification
             function showNotification(text) {
                 notificationText.textContent = text;
                 notification.classList.add('show');
@@ -599,11 +643,9 @@
                 }, 3000);
             }
 
-            // Load saved language preference
             const savedLanguage = localStorage.getItem('tvdb-addon-language') || 'eng';
             languageSelect.value = savedLanguage;
 
-            // Save language preference when changed
             languageSelect.addEventListener('change', function() {
                 localStorage.setItem('tvdb-addon-language', this.value);
             });

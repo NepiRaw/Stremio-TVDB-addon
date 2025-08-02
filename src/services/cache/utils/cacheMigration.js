@@ -13,18 +13,11 @@ class CacheMigration {
         this.hybridCache = null;
     }
 
-    /**
-     * Initialize hybrid cache for migration
-     */
     async initializeHybridCache() {
         this.hybridCache = new HybridCacheService();
-        // Wait for MongoDB connection
         await new Promise(resolve => setTimeout(resolve, 3000));
     }
 
-    /**
-     * Migrate existing cache data from memory to hybrid
-     */
     async migrateExistingData() {
         if (!this.hybridCache) {
             throw new Error('Hybrid cache not initialized');
@@ -47,7 +40,6 @@ class CacheMigration {
             let migrated = 0;
             
             for (const [key, entry] of cacheType.sourceMap.entries()) {
-                // Only migrate non-expired entries
                 if (Date.now() < entry.expiry) {
                     const remainingTtl = entry.expiry - Date.now();
                     await this.hybridCache.setCachedData(cacheType.name, key, entry.data, remainingTtl);
@@ -65,9 +57,6 @@ class CacheMigration {
         return totalMigrated;
     }
 
-    /**
-     * Compare cache performance before and after migration
-     */
     async performanceComparison() {
         console.log('\n⚡ Performance Comparison Starting...');
         
@@ -102,9 +91,6 @@ class CacheMigration {
         };
     }
 
-    /**
-     * Generate migration report
-     */
     async generateMigrationReport() {
         const inMemoryStats = this.inMemoryCache.getStats();
         const hybridStats = await this.hybridCache.getStats();
@@ -133,9 +119,6 @@ class CacheMigration {
         }
     }
 
-    /**
-     * Full migration process
-     */
     async runFullMigration() {
         try {
             console.log('🚀 Starting Full Cache Migration Process...\n');
@@ -161,9 +144,6 @@ class CacheMigration {
         }
     }
 
-    /**
-     * Quick L2 cache inspection utility
-     */
     async inspectL2Cache(cacheType = null, searchTerm = null) {
         try {
             if (!this.hybridCache) {
@@ -172,7 +152,6 @@ class CacheMigration {
 
             console.log('🔍 L2 Cache Inspection...\n');
 
-            // Get summary first
             const summary = await this.hybridCache.getL2Summary();
             if (summary.error) {
                 console.log(`❌ Error: ${summary.error}`);
@@ -184,7 +163,6 @@ class CacheMigration {
                 console.log(`  ${type}: ${stats.active} active, ${stats.expired} expired (${stats.total} total)`);
             });
 
-            // If specific inspection requested
             if (cacheType) {
                 console.log(`\n🔍 Detailed view of ${cacheType} cache:`);
                 const details = await this.hybridCache.inspectL2Cache(cacheType, 10);
@@ -200,7 +178,6 @@ class CacheMigration {
                 }
             }
 
-            // If search term provided
             if (searchTerm) {
                 console.log(`\n🔎 Searching for "${searchTerm}":`);
                 const allDetails = await this.hybridCache.inspectL2Cache(null, 1000);
@@ -236,9 +213,6 @@ class CacheMigration {
     }
 }
 
-/**
- * Run migration if this file is executed directly
- */
 if (require.main === module) {
     (async () => {
         const migration = new CacheMigration();

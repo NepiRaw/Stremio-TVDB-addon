@@ -7,42 +7,36 @@ const InMemoryCacheService = require('./inMemoryCacheService');
 const HybridCacheService = require('./hybridCacheService');
 
 class CacheFactory {
-    /**
-     * Create cache instance based on environment configuration
-     */
-    static createCache() {
+    static createCache(logger = null) {
         const cacheType = process.env.CACHE_TYPE || 'memory';
         const mongoUri = process.env.MONGODB_URI;
         
-        console.log(`🏭 Cache Factory: Initializing ${cacheType} cache`);
+        logger?.info(`🏭 Cache Factory: Initializing ${cacheType} cache`);
         
         switch (cacheType.toLowerCase()) {
             case 'hybrid':
                 if (!mongoUri) {
-                    console.warn('⚠️  CACHE_TYPE=hybrid but no MONGODB_URI found, falling back to memory cache');
-                    return InMemoryCacheService;
+                    logger?.warn('⚠️  CACHE_TYPE=hybrid but no MONGODB_URI found, falling back to memory cache');
+                    return new InMemoryCacheService(logger);
                 }
-                console.log('🔄 Creating hybrid cache (L1: Memory + L2: MongoDB)');
-                return new HybridCacheService();
+                logger?.info('🔄 Creating hybrid cache (L1: Memory + L2: MongoDB)');
+                return new HybridCacheService(logger);
                 
             case 'mongodb':
                 if (!mongoUri) {
-                    console.warn('⚠️  CACHE_TYPE=mongodb but no MONGODB_URI found, falling back to memory cache');
-                    return InMemoryCacheService;
+                    logger?.warn('⚠️  CACHE_TYPE=mongodb but no MONGODB_URI found, falling back to memory cache');
+                    return new InMemoryCacheService(logger);
                 }
-                console.log('🗄️  Creating MongoDB-only cache');
-                return new HybridCacheService();
+                logger?.info('🗄️  Creating MongoDB-only cache');
+                return new HybridCacheService(logger);
                 
             case 'memory':
             default:
-                console.log('💾 Creating in-memory cache');
-                return InMemoryCacheService;
+                logger?.info('💾 Creating in-memory cache');
+                return new InMemoryCacheService(logger);
         }
     }
     
-    /**
-     * Get recommended cache type based on environment
-     */
     static getRecommendedCacheType() {
         const nodeEnv = process.env.NODE_ENV || 'development';
         const hasMongoUri = !!process.env.MONGODB_URI;
@@ -56,9 +50,6 @@ class CacheFactory {
         }
     }
     
-    /**
-     * Display cache configuration info
-     */
     static displayCacheInfo() {
         const cacheType = process.env.CACHE_TYPE || 'memory';
         const nodeEnv = process.env.NODE_ENV || 'development';

@@ -1,53 +1,146 @@
 # Stremio TVDB Addon
 
-A high-performance Stremio addon that provides comprehensive catalog search functionality using TVDB (The TV Database) API for movies, series, and anime with intelligent caching and updates.
+![Stremio](https://img.shields.io/badge/Stremio-Addon-purple)
+![Release](https://img.shields.io/github/v/release/NepiRaw/Stremio-TVDB-addon?label=Release)
+![Node.js](https://img.shields.io/badge/Node.js-18+-brightgreen)
 
-## Features
+Stremio addon that provides comprehensive catalog search functionality using TVDB (The TV Database) API for movies, series, and anime with intelligent caching and IMDb rating integration.
+Unofficial - not affiliated with TVDB.
 
-- 🎬 **Movies**: Search and browse movies from TVDB
-- 📺 **Series**: Search and browse TV series from TVDB  
-- 🎌 **Anime**: Search and browse anime series from TVDB
-- 🔍 **Search-based catalogs**: Only shows content when user searches (no home/discovery clutter)
-- 🌐 **Multi-language support**: Returns content in Stremio's language when available
-- 📱 **Responsive installation page**: Works on all devices including mobile
-- 🔄 **Intelligent updates**: TVDB changes monitoring with selective cache invalidation
+## 🎯 Features
 
-## Performance & Caching
+- 🎬 **Movies**: Complete movie catalog with detailed metadata
+- 📺 **TV Series**: Full series information with seasons and episodes
+- 🎌 **Anime**: Comprehensive anime database integration
+- 🔍 **Search-Only Catalogs**: Clean, clutter-free browsing experience
+- 🌐 **Multi-Language Support**: Content in 11+ languages
 
-### Enhanced Caching System
-- **6-tier cache architecture** with optimized TTLs
-- **Intelligent TTL management**: Different cache durations per data type
-- **Automatic cleanup**: Memory-efficient with 5-minute cleanup cycles
+## 📋 Table of Contents
 
-### Intelligent Updates
-- **TVDB /updates monitoring**: 12-hour polling for changes
-- **Selective invalidation**: Only refresh changed content
-- **Background processing**: Non-blocking updates with error recovery
-- **Pattern-based clearing**: Precise cache management
+- [Configuration](#-configuration)
+- [Self-Hosting Installation](#-self-hosting-installation)
+  - [Docker Compose (Recommended)](#docker-compose-recommended)
+  - [Manual Installation](#manual-installation)
+  - [Vercel Deployment](#vercel-deployment)
+- [Environment Variables](#-environment-variables)
+- [API Documentation](#-api-documentation)
+- [Future Enhancements](#-future-enhancements)
+- [Documentation](#-documentation)
 
-## Installation
+## ⚙️ Configuration
 
-1. Clone this repository
-2. Install dependencies: `npm install`
-3. Create a `.env` file with your configuration (see `.env.example`)
-4. Start the server: `npm start`
-5. Open `http://localhost:3000` in your browser to install the addon
+### Access Configuration
+1. Navigate to your addon URL (e.g., `http://localhost:3000` or your domain)
+2. Select your preferred language from the dropdown
+3. Click "Install Addon" to add it to Stremio
 
-## Environment Variables
+### Configuration Options
+- **Language Selection**: Choose from 11 supported languages
+  - Content metadata will be shown in your preferred language when available
+  - Falls back to English if translation unavailable
+- **Cache Type**: Automatically managed based on your environment setup
+- **Rating Enhancement**: Automatic IMDb rating integration when available
 
-### Required
+## 🚀 Self-Hosting Installation
+
+### 🐳 Docker Compose (Recommended)
+
+1. **Create docker-compose.yml:**
+
+```yaml
+# Option 1: Use the prebuilt image (recommended for most users)
+version: '3.8'
+services:
+  stremio-tvdb-addon:
+    image: NepiRaw/Stremio-TVDB-addon:latest
+    container_name: stremio-tvdb-addon
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 ```
-TVDB_API_KEY=your_tvdb_api_key_here
+
+> **Note:**
+> - The prebuilt image already contains all dependencies and starts the server automatically.
+> - If you want to use your own MongoDB instance for persistent caching, set `MONGODB_URI` in your `.env` file to point to your database (e.g., MongoDB Atlas or a local instance). This compose file does not run MongoDB by default.
+
+
+2. **Set up environment:**
+
+```bash
+git clone https://github.com/NepiRaw/Stremio-TVDB-addon.git
+cd Stremio-TVDB-addon
+cp .env.example .env
+# Edit .env with your API keys
+docker-compose up -d
 ```
 
-### Optional
-```
-PORT=3000
-TVDB_BASE_URL=https://api4.thetvdb.com/v4
-ADMIN_API_KEY=your_secure_admin_key_for_monitoring
+3. **Access your addon at `http://localhost:3000` (or any other configured domain)**
+
+### 🐍 Manual Installation
+
+1. **Prerequisites:**
+   - Node.js 18+ installed
+   - MongoDB (optional, for persistent caching)
+
+2. **Installation:**
+```bash
+# Clone the repository
+git clone https://github.com/NepiRaw/Stremio-TVDB-addon.git
+cd Stremio-TVDB-addon
+
+# Install dependencies
+npm install
+
+# Copy and configure environment
+cp .env.example .env
+# Edit .env with your configuration
+
+# Start the addon
+npm start
 ```
 
-## API Endpoints
+3. **Access your addon at `http://localhost:3000` (or any other configured domain)**
+
+### 🔺Vercel Deployment
+
+1. **Copy this repository to your GitHub account**
+
+2. **Deploy to Vercel:**
+   - Connect your GitHub repository to Vercel
+   - Configure environment variables in Vercel dashboard
+   - Deploy
+
+3. **Environment Variables in Vercel:**
+   - Set all required variables from the table below
+   - Use MongoDB Atlas for database (free tier available)
+
+## 🔧 Environment Variables
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `TVDB_API_KEY` | ✅ Yes | - | TVDB API key from [thetvdb.com](https://thetvdb.com/api-information) |
+| `OMDB_API_KEY` | ❌ Optional | - | OMDb API key for enhanced ratings from [omdbapi.com](http://www.omdbapi.com/apikey.aspx) |
+| `BASE_URL` | ❌ Optional | Auto-detect | Base URL for the addon (production deployments) |
+| `PORT` | ❌ Optional | `3000` | Server port |
+| `ADMIN_API_KEY` | 🔸 Recommended | - | Secure key for admin operations and monitoring |
+| `MONGODB_URI` | 🔸 Recommended | - | MongoDB connection string for persistent caching |
+| `CACHE_TYPE` | ❌ Optional | `memory` | Cache strategy: `memory`, `hybrid`, or `mongodb` |
+| `LOG_LEVEL` | ❌ Optional | `info` | Logging level: `error`, `warn`, `info`, or `debug` |
+
+### Cache Configuration Details
+- **`memory`**: Fast in-memory cache, no persistence (good for development)
+- **`hybrid`**: L1 (memory) + L2 (MongoDB) - **Recommended for production**
+- **`mongodb`**: MongoDB-only cache, slower but full persistence
+
+## 📡 API Documentation
 
 ### Public Endpoints
 - `GET /` - Installation page
@@ -63,30 +156,8 @@ ADMIN_API_KEY=your_secure_admin_key_for_monitoring
 
 *Admin endpoints require `ADMIN_API_KEY` and are rate-limited (10 req/min per IP)*
 
-## Development
-
-```bash
-# Install dependencies
-npm install
-
-# Start development server with auto-reload
-npm run dev
-
-# Run tests
-npm test
-
-# Monitor cache performance (requires ADMIN_API_KEY)
-curl -H "X-Admin-Key: your-key" http://localhost:3000/admin/cache/stats
-```
-
-
 ## Future Enhancements
-
-- [ ] MongoDB caching for persistent storage
-- [ ] Advanced search filters and sorting
-- [ ] User preferences and favorites
-- [ ] Content recommendations based on viewing history
-- [ ] GraphQL API for more efficient data fetching
+- [ ] Content recommendations (popular, trending, ...)
 
 ## Documentation
 

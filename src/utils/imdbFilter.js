@@ -8,15 +8,10 @@
  * good visual presentation and indicate complete metadata.
  */
 
-/**
- * Check if a TVDB item has a valid poster image
- * @param {Object} item - TVDB search result or detailed item
- * @returns {boolean} True if item has valid poster
- */
+
 function hasValidPoster(item) {
     if (!item) return false;
     
-    // Check direct poster/image fields
     if (item.poster && typeof item.poster === 'string' && item.poster.trim()) {
         return true;
     }
@@ -25,7 +20,6 @@ function hasValidPoster(item) {
         return true;
     }
     
-    // Check artworks array for poster types
     if (item.artworks && Array.isArray(item.artworks)) {
         const posterArtwork = item.artworks.find(artwork => {
             // Type 2 = series poster, Type 14 = movie poster, Type 15 = movie cover
@@ -41,7 +35,6 @@ function hasValidPoster(item) {
         }
     }
     
-    // Check alternative poster field names
     if (item.posterUrl && typeof item.posterUrl === 'string' && item.posterUrl.trim()) {
         return true;
     }
@@ -57,17 +50,11 @@ function hasValidPoster(item) {
     return false;
 }
 
-/**
- * Check if a TVDB item has a valid IMDB ID
- * @param {Object} item - TVDB search result or detailed item
- * @returns {boolean} True if item has valid IMDB ID
- */
 function hasValidImdbId(item) {
     if (!item) {
         return false;
     }
     
-    // Check remoteIds array (most reliable method)
     if (item.remoteIds && Array.isArray(item.remoteIds)) {
         const imdbRemote = item.remoteIds.find(remote => 
             remote.sourceName?.toLowerCase() === 'imdb' || 
@@ -82,7 +69,6 @@ function hasValidImdbId(item) {
         }
     }
     
-    // Check direct imdb field (fallback)
     if (item.imdb && typeof item.imdb === 'string') {
         const id = item.imdb;
         if (id.startsWith('tt')) {
@@ -96,15 +82,9 @@ function hasValidImdbId(item) {
     return false;
 }
 
-/**
- * Extract valid IMDB ID from TVDB item
- * @param {Object} item - TVDB item
- * @returns {string|null} IMDB ID with tt prefix or null if none
- */
 function extractImdbId(item) {
     if (!item) return null;
     
-    // Check remoteIds array (most reliable)
     if (item.remoteIds && Array.isArray(item.remoteIds)) {
         const imdbRemote = item.remoteIds.find(remote => 
             remote.sourceName?.toLowerCase() === 'imdb' || 
@@ -118,7 +98,6 @@ function extractImdbId(item) {
         }
     }
     
-    // Check direct imdb field
     if (item.imdb && typeof item.imdb === 'string') {
         const id = item.imdb;
         return id.startsWith('tt') ? id : `tt${id}`;
@@ -127,11 +106,6 @@ function extractImdbId(item) {
     return null;
 }
 
-/**
- * Check if item meets all quality requirements (IMDB ID + Poster)
- * @param {Object} item - TVDB item to validate
- * @returns {boolean} True if item passes all quality gates
- */
 function hasValidQualityMetadata(item) {
     return hasValidImdbId(item) && hasValidPoster(item);
 }
@@ -192,12 +166,6 @@ function filterDetailedByImdbRequirement(detailedItems) {
     });
 }
 
-/**
- * Validate that a single item has all required quality metadata before processing
- * @param {Object} item - TVDB item to validate
- * @param {string} itemType - 'movie' or 'series' for logging
- * @returns {boolean} True if item should be processed
- */
 function validateImdbRequirement(item, itemType = 'content') {
     if (!item) {
         console.log(`⚠️ Cannot validate null ${itemType}`);

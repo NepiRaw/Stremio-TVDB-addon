@@ -1,110 +1,71 @@
 /**
- * TVDB Metadata Transf            const numericId = parseInt(id, 10);
-            
-            // Extract all external IDs for cross-referencing
-            const externalIds = this.contentFetcher.extractExternalIds(item);
-            
-            // Create Stremio-compatible primary ID
-            // Priority: IMDb ID > TMDB ID > TVDB ID (for better cross-addon compatibility)
-            let primaryId;
-            if (externalIds.imdb_id) {
-                primaryId = `${stremioType}:imdb:${externalIds.imdb_id}`;
-            } else if (externalIds.tmdb_id) {
-                primaryId = `${stremioType}:tmdb:${externalIds.tmdb_id}`;
-            } else {
-                primaryId = `${stremioType}:tvdb:${numericId}`;
-            }
-
-            // Base meta object with cross-reference IDs
-            const meta = {
-                id: primaryId,
-                type: stremioType,
-                name: item.name || 'Unknown Title',
-                
-                // Add all external IDs for cross-addon linking
-                ...externalIds
-            }; Transforms detailed content data to full Stremio metadata format
+ * TVDB Metadata Transformer
+ * Transforms detailed content data to full Stremio metadata format
  */
 
 const { validateImdbRequirement } = require('../../utils/imdbFilter');
 const { getEnhancedReleaseInfo } = require('../../utils/theatricalStatus');
 
 class MetadataTransformer {
-    constructor(contentFetcher, translationService, artworkHandler) {
+    constructor(contentFetcher, translationService, artworkHandler, logger) {
         this.contentFetcher = contentFetcher;
         this.translationService = translationService;
         this.artworkHandler = artworkHandler;
+        this.logger = logger;
     }
 
-    /**
-     * Transform detailed TVDB data to full Stremio meta format
-     */
     async transformDetailedToStremioMeta(item, type, seasonsData = null, tvdbLanguage = 'eng') {
         try {
             const stremioType = type === 'movie' ? 'movie' : 'series';
-            
-            // Validate IMDB requirement
             if (!validateImdbRequirement(item, stremioType)) {
-                console.log(`🚫 Skipping ${stremioType} transformation - IMDB ID required`);
+                this.logger?.debug(`Skipping ${stremioType} transformation - IMDB ID required`);
                 return null;
             }
-            
             const numericId = this.extractNumericId(item.id);
-            
-            // Extract all external IDs for cross-referencing
             const externalIds = this.contentFetcher.extractExternalIds(item);
-            
-            // Use TVDB ID as primary for this addon (maintains catalog compatibility)
-            // External IDs will be included separately for cross-addon linking
-            const primaryId = `tvdb-${numericId}`;
-
-            // Base meta object with cross-reference IDs
+            let primaryId;
+            if (externalIds.imdb_id) {
+                primaryId = externalIds.imdb_id;
+                this.logger?.debug(`Using IMDb ID as primary: ${primaryId} (TVDB: ${numericId})`);
+            } else {
+                primaryId = `tvdb-${numericId}`;
+                this.logger?.debug(`Using TVDB ID as primary: ${primaryId} (no IMDb ID available)`);
+            }
             const meta = {
                 id: primaryId,
                 type: stremioType,
                 name: item.name || 'Unknown Title',
-                
-                // Add all external IDs for cross-addon linking
+                tvdb_id: numericId,
                 ...externalIds
             };
-
-            // Get translations
             await this.applyTranslations(meta, stremioType, numericId, tvdbLanguage, item);
-
-            // Apply artwork
             await this.applyArtwork(meta, stremioType, numericId, tvdbLanguage, item);
-
-            // Add basic metadata
             this.addBasicMetadata(meta, item, tvdbLanguage);
-
-            // Add type-specific content
             if (stremioType === 'series') {
                 await this.addSeriesContent(meta, numericId, seasonsData, tvdbLanguage, externalIds);
             } else {
                 this.addMovieContent(meta, externalIds.imdb_id);
             }
-
-            // Clean up empty arrays
             this.cleanupEmptyArrays(meta);
-
-            // Add debug information
-            meta._debug = {
-                timestamp: new Date().toISOString(),
-                language: tvdbLanguage,
-                posterSource: meta.poster ? 'artwork-api' : 'fallback',
-                generated: 'fresh'
-            };
-
+            if (process.env.NODE_ENV === 'development') {
+                meta._debug = {
+                    timestamp: new Date().toISOString(),
+                    language: tvdbLanguage,
+                    posterSource: meta.poster ? 'artwork-api' : 'fallback',
+                    generated: 'fresh'
+                };
+            }
             return meta;
         } catch (error) {
-            console.error('Error transforming detailed metadata:', error);
+            if (this.logger?.error) {
+                this.logger.error('Error transforming detailed metadata:', error);
+            } else {
+                console.error('Error transforming detailed metadata:', error);
+            }
             return null;
         }
     }
 
-    /**
-     * Apply translations to metadata
-     */
     async applyTranslations(meta, stremioType, numericId, tvdbLanguage, item) {
         const entityType = stremioType === 'movie' ? 'movies' : 'series';
         const { translation, isOriginal } = await this.translationService.getContentTranslation(
@@ -122,9 +83,6 @@ class MetadataTransformer {
         }
     }
 
-    /**
-     * Apply artwork to metadata
-     */
     async applyArtwork(meta, stremioType, numericId, tvdbLanguage, item) {
         const artwork = await this.artworkHandler.getArtwork(
             stremioType === 'movie' ? 'movies' : 'series', 
@@ -132,7 +90,6 @@ class MetadataTransformer {
             tvdbLanguage
         );
         
-        // Apply high-res artwork if available
         if (artwork.poster) {
             meta.poster = artwork.poster;
         }
@@ -184,40 +141,29 @@ class MetadataTransformer {
         }
     }
 
-    /**
-     * Add basic metadata (year, genres, cast, etc.)
-     */
     addBasicMetadata(meta, item, tvdbLanguage = 'eng') {
-        // Enhanced release info with theatrical status FIRST (before year processing)
         this.addTheatricalReleaseInfo(meta, item, tvdbLanguage);
         
-        // Enhanced year with date range for series (but preserve theatrical year for movies)
         this.addEnhancedYear(meta, item);
         
-        // Runtime information
         this.addEnhancedRuntime(meta, item);
 
-        // Genres
         if (Array.isArray(item.genres)) {
             meta.genres = item.genres.map(genre => genre.name || genre).filter(Boolean);
         }
 
-        // Cast - with genre-based filtering
         this.addCastWithGenreFiltering(meta, item);
 
-        // Country
         if (item.originalCountry) {
             meta.country = [item.originalCountry];
         } else if (item.country) {
             meta.country = [item.country];
         }
 
-        // Language
         if (item.originalLanguage) {
             meta.language = item.originalLanguage;
         }
 
-        // Network
         if (item.originalNetwork?.name) {
             meta.network = item.originalNetwork.name;
         } else if (item.latestNetwork?.name) {
@@ -225,11 +171,7 @@ class MetadataTransformer {
         }
     }
 
-    /**
-     * Add enhanced year with date range for series
-     */
     addEnhancedYear(meta, item) {
-        // For movies, preserve theatrical status year if already set
         if (meta.type === 'movie' && meta.year) {
             console.log(`📅 Preserving theatrical year for movie: ${meta.year}`);
             return;
@@ -238,28 +180,22 @@ class MetadataTransformer {
         const startYear = item.firstAired ? new Date(item.firstAired).getFullYear() : 
                          item.year ? parseInt(item.year) : null;
         
-        // For series, show date range based on status
         if (meta.type === 'series' && startYear) {
             const lastAiredDate = item.lastAired ? new Date(item.lastAired) : null;
             const endYear = lastAiredDate ? lastAiredDate.getFullYear() : null;
             
-            // Extract status to determine format
             const status = this.extractValidStatus(item.status);
             
             if (status === 'ended' && endYear && endYear !== startYear) {
-                // Ended series: show full range "2008-2013"
                 meta.year = `${startYear}-${endYear}`;
                 console.log(`📅 Series date range: ${meta.year}`);
             } else if (status === 'ended') {
-                // Series ended in same year it started
                 meta.year = startYear;
                 console.log(`📅 Series year: ${meta.year}`);
             } else if (status === 'continuing') {
-                // Ongoing series: show with dash "2016-"
                 meta.year = `${startYear}-`;
                 console.log(`📅 Ongoing series: ${meta.year}`);
             } else {
-                // Unknown status: use date-based logic
                 if (endYear && endYear !== startYear) {
                     meta.year = `${startYear}-${endYear}`;
                 } else {
@@ -268,22 +204,16 @@ class MetadataTransformer {
                 console.log(`📅 Series year (unknown status): ${meta.year}`);
             }
         } else if (meta.type === 'movie' && !meta.year) {
-            // For movies without theatrical year, use simple year
             meta.year = startYear;
         }
     }
 
-    /**
-     * Add theatrical release information for movies
-     */
     addTheatricalReleaseInfo(meta, item, tvdbLanguage = 'eng') {
-        // Only apply to movies
         if (meta.type !== 'movie') return;
         
         try {
             const releaseInfo = getEnhancedReleaseInfo(item, tvdbLanguage);
             
-            // Set Stremio standard fields
             if (releaseInfo.year) {
                 meta.year = releaseInfo.year;
             }
@@ -296,11 +226,9 @@ class MetadataTransformer {
                 meta.released = releaseInfo.released;
             }
             
-            // Add theatrical status to description
             if (releaseInfo.statusMessage) {
                 const currentDescription = meta.description || '';
                 
-                // Prepend theatrical status to description
                 if (currentDescription) {
                     meta.description = `${releaseInfo.statusMessage}\n\n${currentDescription}`;
                 } else {
@@ -315,15 +243,11 @@ class MetadataTransformer {
         }
     }
 
-    /**
-     * Extract and validate TVDB status for date range logic
-     */
     extractValidStatus(statusData) {
         if (!statusData) return null;
         
         let statusName = null;
         
-        // Extract status name from object or string
         if (typeof statusData === 'object' && statusData.name) {
             statusName = statusData.name;
         } else if (typeof statusData === 'string') {
@@ -332,16 +256,12 @@ class MetadataTransformer {
             return null;
         }
         
-        // Normalize and validate against known TVDB statuses
         const normalizedStatus = statusName.toLowerCase().trim();
         const validStatuses = ['ended', 'continuing'];
         
         return validStatuses.includes(normalizedStatus) ? normalizedStatus : null;
     }
 
-    /**
-     * Add runtime information
-     */
     addEnhancedRuntime(meta, item) {
         if (item.runtime) {
             meta.runtime = `${item.runtime} min`;
@@ -350,15 +270,11 @@ class MetadataTransformer {
         }
     }
 
-    /**
-     * Add cast with genre-based filtering
-     */
     addCastWithGenreFiltering(meta, item) {
         if (!Array.isArray(item.characters) || item.characters.length === 0) {
             return;
         }
 
-        // Check if content is anime/animation
         const isAnimatedContent = this.isAnimatedContent(meta.genres || []);
         
         if (isAnimatedContent) {
@@ -382,7 +298,7 @@ class MetadataTransformer {
                 return aSort - bSort;
             });
 
-        // Take top 5 most important actors
+        // Take top 5 most important actors - Can be adjusted
         const topActors = validActors
             .slice(0, 5)
             .map(c => c.people?.name || c.personName);
@@ -393,9 +309,6 @@ class MetadataTransformer {
         }
     }
 
-    /**
-     * Check if content is animated (anime/animation)
-     */
     isAnimatedContent(genres) {
         if (!Array.isArray(genres)) return false;
         
@@ -413,9 +326,6 @@ class MetadataTransformer {
         });
     }
 
-    /**
-     * Add series-specific content (episodes, seasons)
-     */
     async addSeriesContent(meta, numericId, seasonsData, tvdbLanguage, externalIds) {
         meta.videos = [];
         meta.seasons = 0;
@@ -432,8 +342,6 @@ class MetadataTransformer {
             meta.behaviorHints = { defaultVideoId: null, hasScheduledVideos: false };
             return;
         }
-
-        // Get episodes and translations
         const episodes = await this.contentFetcher.getSeriesEpisodes(numericId);
         if (episodes.length === 0) {
             meta.behaviorHints = { defaultVideoId: null, hasScheduledVideos: false };
@@ -442,13 +350,11 @@ class MetadataTransformer {
 
         console.log(`📺 Got ${episodes.length} episodes from API`);
 
-        // Get bulk translations
         const translations = await this.translationService.getBulkEpisodeTranslations(numericId, tvdbLanguage);
         const { primaryLookup, fallbackLookup } = this.translationService.createTranslationLookups(
             translations.primary, translations.fallback
         );
 
-        // Filter and process episodes (includes aired + future episodes for Stremio's upcoming feature)
         const airedEpisodes = this.contentFetcher.filterAiredEpisodes(episodes);
         console.log(`📺 Filtered to ${airedEpisodes.length} episodes (aired + upcoming)`);
 
@@ -460,11 +366,8 @@ class MetadataTransformer {
         meta.seasons = seasonsWithContent.length;
         console.log(`📺 Final seasons with content: ${meta.seasons}`);
 
-        // Build video entries with cross-addon compatible IDs
         const videoMap = new Map();
         for (const episode of airedEpisodes) {
-            // Use IMDb format for video IDs when available (for cross-addon watch state sync)
-            // Otherwise fall back to TVDB format for this addon's episodes
             const videoId = externalIds.imdb_id ? 
                 `${externalIds.imdb_id}:${episode.seasonNumber}:${episode.number}` :
                 `${numericId}:${episode.seasonNumber}:${episode.number}`;
@@ -497,9 +400,6 @@ class MetadataTransformer {
         };
     }
 
-    /**
-     * Add movie-specific content
-     */
     addMovieContent(meta, imdbId) {
         console.log(`🎬 Movie processing complete: ${meta.name} (${meta.id})`);
         
@@ -513,9 +413,6 @@ class MetadataTransformer {
         };
     }
 
-    /**
-     * Get episode thumbnail with fallbacks
-     */
     getEpisodeThumbnail(episode, meta) {
         const sources = [
             episode.image, episode.thumbnail, episode.filename,
@@ -525,9 +422,6 @@ class MetadataTransformer {
         return sources.length > 0 ? sources[0] : null;
     }
 
-    /**
-     * Extract numeric ID from TVDB ID format
-     */
     extractNumericId(id) {
         if (typeof id === 'string') {
             const match = id.match(/(\d+)$/);
@@ -536,9 +430,6 @@ class MetadataTransformer {
         return id;
     }
 
-    /**
-     * Clean up empty arrays from metadata
-     */
     cleanupEmptyArrays(meta) {
         Object.keys(meta).forEach(key => {
             if (Array.isArray(meta[key]) && meta[key].length === 0) {

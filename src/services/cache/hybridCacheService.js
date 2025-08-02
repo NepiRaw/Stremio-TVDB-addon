@@ -7,8 +7,8 @@
 const { MongoClient } = require('mongodb');
 
 class HybridCacheService {
-    constructor() {
-        // L1 Cache: In-memory Maps (fast access)
+    constructor(logger = null) {
+        this.logger = logger;
         this.searchCache = new Map();
         this.imdbCache = new Map();
         this.artworkCache = new Map();
@@ -16,22 +16,20 @@ class HybridCacheService {
         this.metadataCache = new Map();
         this.seasonCache = new Map();
         
-        // L2 Cache: MongoDB (persistence)
         this.mongoClient = null;
         this.mongoDB = null;
+        
         this.mongoConnected = false;
         
-        // Cache configuration
         this.CACHE_TTLS = {
-            search: 2 * 60 * 60 * 1000,        // 2 hours
-            imdb: 7 * 24 * 60 * 60 * 1000,     // 7 days
-            artwork: 14 * 24 * 60 * 60 * 1000, // 14 days
-            translation: 3 * 24 * 60 * 60 * 1000, // 3 days
-            metadata: 12 * 60 * 60 * 1000,     // 12 hours
-            season: 6 * 60 * 60 * 1000         // 6 hours
+            search: 2 * 60 * 60 * 1000,             // 2 hours
+            imdb: 7 * 24 * 60 * 60 * 1000,          // 7 days
+            artwork: 14 * 24 * 60 * 60 * 1000,      // 14 days
+            translation: 3 * 24 * 60 * 60 * 1000,   // 3 days
+            metadata: 12 * 60 * 60 * 1000,          // 12 hours
+            season: 6 * 60 * 60 * 1000              // 6 hours
         };
         
-        // MongoDB collection mapping
         this.mongoCollections = {
             search: 'cache_search',
             imdb: 'cache_imdb',
@@ -41,45 +39,36 @@ class HybridCacheService {
             season: 'cache_season'
         };
         
-        // Initialize MongoDB connection if URI is available
         this.initMongoDB();
-        
-        // Start cleanup interval for in-memory cache
         this.startCleanupInterval();
     }
 
-    /**
-     * Initialize MongoDB connection
-     */
     async initMongoDB() {
         if (!process.env.MONGODB_URI) {
-            console.log('💾 MongoDB not configured, using in-memory cache only');
+            this.logger?.info('💾 MongoDB not configured, using in-memory cache only');
             return;
         }
 
         try {
-            console.log('🔌 Initializing MongoDB connection...');
+            this.logger?.info('🔌 Initializing MongoDB connection...');
             this.mongoClient = new MongoClient(process.env.MONGODB_URI);
             await this.mongoClient.connect();
             
             this.mongoDB = this.mongoClient.db('stremio-tvdb-cache');
             this.mongoConnected = true;
             
-            console.log('✅ MongoDB connected successfully');
+            this.logger?.info('✅ MongoDB connected successfully');
             
             // Create indexes for performance
             await this.createMongoIndexes();
             
         } catch (error) {
-            console.error('❌ MongoDB connection failed:', error.message);
-            console.log('🔄 Falling back to in-memory cache only');
+            this.logger?.error('❌ MongoDB connection failed:', error.message);
+            this.logger?.info('🔄 Falling back to in-memory cache only');
             this.mongoConnected = false;
         }
     }
 
-    /**
-     * Create MongoDB indexes for performance and TTL
-     */
     async createMongoIndexes() {
         if (!this.mongoConnected) return;
 
@@ -87,27 +76,22 @@ class HybridCacheService {
             for (const [type, collectionName] of Object.entries(this.mongoCollections)) {
                 const collection = this.mongoDB.collection(collectionName);
                 
-                // TTL index for automatic expiration
                 await collection.createIndex(
                     { "expiry": 1 }, 
                     { expireAfterSeconds: 0 }
                 );
                 
-                // Key index for fast lookups
                 await collection.createIndex(
                     { "key": 1 }, 
                     { unique: true }
                 );
             }
-            console.log('📇 MongoDB indexes created successfully');
+            this.logger?.info('📇 MongoDB indexes created successfully');
         } catch (error) {
             console.error('❌ Error creating MongoDB indexes:', error.message);
         }
     }
 
-    /**
-     * Get cache map by type
-     */
     getCacheMap(cacheType) {
         const cacheMappers = {
             'search': this.searchCache,
@@ -120,34 +104,28 @@ class HybridCacheService {
         return cacheMappers[cacheType];
     }
 
-    /**
-     * Hybrid cache getter - checks L1 (memory) then L2 (MongoDB)
-     */
     async getCachedData(cacheType, key) {
         // L1 Cache: Check in-memory first (fastest)
         const memoryCache = this.getCacheMap(cacheType);
         const memoryEntry = memoryCache.get(key);
         
         if (memoryEntry && Date.now() < memoryEntry.expiry) {
-            console.log(`💾 Cache HIT (L1-Memory): ${key}`);
+            this.logger?.debug(`💾 Cache:HIT (L1-Memory): ${key}`);
             return memoryEntry.data;
         }
         
-        // Remove expired memory entry
         if (memoryEntry) {
             memoryCache.delete(key);
         }
         
-        // L2 Cache: Check MongoDB if connected
         if (this.mongoConnected) {
             try {
                 const collection = this.mongoDB.collection(this.mongoCollections[cacheType]);
                 const mongoEntry = await collection.findOne({ key: key });
                 
                 if (mongoEntry && new Date() < mongoEntry.expiry) {
-                    console.log(`💾 Cache HIT (L2-MongoDB): ${key}`);
-                    
-                    // Promote to L1 cache for faster future access
+                    this.logger?.debug(`💾 Cache:HIT (L2-MongoDB): ${key}`);
+
                     const memoryEntry = {
                         data: mongoEntry.data,
                         expiry: mongoEntry.expiry.getTime(),
@@ -163,17 +141,13 @@ class HybridCacheService {
             }
         }
         
-        console.log(`🔍 Cache MISS (L1+L2): ${key}`);
+        this.logger?.debug(`🔍 Cache:MISS (L1+L2): ${key}`);
         return null;
     }
 
-    /**
-     * Hybrid cache setter - stores in both L1 and L2
-     */
     async setCachedData(cacheType, key, data, ttl) {
         const expiry = Date.now() + ttl;
         
-        // L1 Cache: Store in memory (immediate access)
         const memoryCache = this.getCacheMap(cacheType);
         const memoryEntry = {
             data: data,
@@ -183,20 +157,16 @@ class HybridCacheService {
         };
         memoryCache.set(key, memoryEntry);
         
-        // L2 Cache: Store in MongoDB (persistence) - async, don't wait
         if (this.mongoConnected) {
             this.storeInMongoDB(cacheType, key, data, expiry).catch(error => {
                 console.error(`❌ MongoDB cache write error: ${error.message}`);
             });
         }
         
-        console.log(`💾 Cached (Hybrid): ${key} (TTL: ${Math.round(ttl / 60000)}min)`);
+        this.logger?.debug(`💾 Cached (Hybrid): ${key} (TTL: ${Math.round(ttl / 60000)}min)`);
         return true;
     }
 
-    /**
-     * Store data in MongoDB (async, non-blocking)
-     */
     async storeInMongoDB(cacheType, key, data, expiry) {
         const collection = this.mongoDB.collection(this.mongoCollections[cacheType]);
         
@@ -215,13 +185,9 @@ class HybridCacheService {
         );
     }
 
-    /**
-     * Clear cache by pattern (clears both L1 and L2)
-     */
     async clearByPattern(pattern) {
         let totalRemoved = 0;
         
-        // Clear L1 (Memory) caches
         const cacheTypes = [
             { name: 'search', map: this.searchCache },
             { name: 'imdb', map: this.imdbCache },
@@ -245,11 +211,10 @@ class HybridCacheService {
             });
             
             if (keysToDelete.length > 0) {
-                console.log(`🧹 Cleared ${keysToDelete.length} entries from ${cache.name} L1 cache matching pattern: ${pattern}`);
+                this.logger?.info(`🧹 Cleared ${keysToDelete.length} entries from ${cache.name} L1 cache matching pattern: ${pattern}`);
             }
         });
 
-        // Clear L2 (MongoDB) caches
         if (this.mongoConnected) {
             try {
                 for (const [type, collectionName] of Object.entries(this.mongoCollections)) {
@@ -260,7 +225,7 @@ class HybridCacheService {
                     });
                     
                     if (result.deletedCount > 0) {
-                        console.log(`🧹 Cleared ${result.deletedCount} entries from ${type} L2 cache matching pattern: ${pattern}`);
+                        this.logger?.info(`🧹 Cleared ${result.deletedCount} entries from ${type} L2 cache matching pattern: ${pattern}`);
                     }
                 }
             } catch (error) {
@@ -271,9 +236,6 @@ class HybridCacheService {
         return totalRemoved;
     }
 
-    /**
-     * Get comprehensive cache statistics (both L1 and L2)
-     */
     async getStats() {
         const stats = {
             l1Cache: {
@@ -293,12 +255,10 @@ class HybridCacheService {
             cacheTTLs: this.CACHE_TTLS
         };
         
-        // Calculate L1 total
         stats.l1Cache.totalEntries = Object.values(stats.l1Cache)
             .filter(val => typeof val === 'number')
             .reduce((sum, val) => sum + val, 0);
         
-        // Get L2 (MongoDB) stats if connected
         if (this.mongoConnected) {
             try {
                 for (const [type, collectionName] of Object.entries(this.mongoCollections)) {
@@ -315,10 +275,6 @@ class HybridCacheService {
         return stats;
     }
 
-    /**
-     * Inspect L2 (MongoDB) cache contents
-     * Returns detailed view of what's stored in MongoDB
-     */
     async inspectL2Cache(cacheType = null, limit = 50) {
         if (!this.mongoConnected) {
             return { error: 'MongoDB not connected', entries: [] };
@@ -331,7 +287,6 @@ class HybridCacheService {
             for (const type of cacheTypes) {
                 const collection = this.mongoDB.collection(this.mongoCollections[type]);
                 
-                // Get recent entries with details
                 const entries = await collection.find({})
                     .sort({ timestamp: -1 })
                     .limit(limit)
@@ -358,31 +313,22 @@ class HybridCacheService {
         }
     }
 
-    /**
-     * Get a preview of cached data (truncated for readability)
-     */
     getDataPreview(data) {
         const dataStr = JSON.stringify(data);
         if (dataStr.length <= 100) return data;
         
-        // For arrays, show count and first item
         if (Array.isArray(data)) {
             return `Array(${data.length}) [${JSON.stringify(data[0])}...]`;
         }
         
-        // For objects, show key structure
         if (typeof data === 'object' && data !== null) {
             const keys = Object.keys(data);
             return `Object {${keys.slice(0, 3).join(', ')}${keys.length > 3 ? '...' : ''}}`;
         }
-        
-        // For strings, truncate
+
         return dataStr.substring(0, 100) + '...';
     }
 
-    /**
-     * Get L2 cache summary by type
-     */
     async getL2Summary() {
         if (!this.mongoConnected) {
             return { error: 'MongoDB not connected' };
@@ -401,7 +347,6 @@ class HybridCacheService {
                 });
                 const active = total - expired;
 
-                // Get a sample document for size estimation
                 const sampleDoc = await collection.findOne({});
                 const avgSize = sampleDoc ? JSON.stringify(sampleDoc).length : 0;
                 
@@ -421,9 +366,6 @@ class HybridCacheService {
         }
     }
 
-    /**
-     * Clean up expired entries from L1 cache (L2 cleanup is automatic via MongoDB TTL)
-     */
     cleanup() {
         const now = Date.now();
         let totalRemoved = 0;
@@ -446,29 +388,22 @@ class HybridCacheService {
                 }
             }
             if (removed > 0) {
-                console.log(`🧹 Cleaned ${cache.name} L1 cache: ${removed} expired entries`);
+                this.logger?.debug(`🧹 Cleaned ${cache.name} L1 cache: ${removed} expired entries`);
             }
             totalRemoved += removed;
         });
 
         if (totalRemoved > 0) {
-            console.log(`🧹 Total L1 cleanup: ${totalRemoved} expired entries removed`);
+            this.logger?.info(`🧹 Total L1 cleanup: ${totalRemoved} expired entries removed`);
         }
     }
 
-    /**
-     * Start automatic cleanup interval for L1 cache
-     */
     startCleanupInterval() {
         setInterval(() => this.cleanup(), 5 * 60 * 1000);
-        console.log('🕐 Enhanced hybrid cache cleanup interval started (5 minutes)');
+        this.logger?.info('🕐 Enhanced hybrid cache cleanup interval started (5 minutes)');
     }
 
-    /**
-     * Clear all caches (both L1 and L2)
-     */
     async clearAll() {
-        // Clear L1 caches
         const l1Counts = {
             search: this.searchCache.size,
             imdb: this.imdbCache.size,
@@ -485,9 +420,8 @@ class HybridCacheService {
         this.metadataCache.clear();
         this.seasonCache.clear();
         
-        console.log('🗑️ Cleared all L1 caches:', l1Counts);
+        this.logger?.info('🗑️ Cleared all L1 caches:', l1Counts);
         
-        // Clear L2 caches
         if (this.mongoConnected) {
             try {
                 const l2Counts = {};
@@ -497,7 +431,7 @@ class HybridCacheService {
                     await collection.deleteMany({});
                     l2Counts[type] = count;
                 }
-                console.log('🗑️ Cleared all L2 caches:', l2Counts);
+                this.logger?.info('🗑️ Cleared all L2 caches:', l2Counts);
             } catch (error) {
                 console.error('❌ Error clearing L2 caches:', error.message);
             }
@@ -506,24 +440,15 @@ class HybridCacheService {
 
     // ==================== IMDB VALIDATION CACHE ====================
 
-    /**
-     * Generate cache key for IMDB validation
-     */
     generateImdbKey(contentType, contentId) {
         return `imdb:${contentType}:${contentId}`;
     }
 
-    /**
-     * Get cached IMDB validation result
-     */
     async getImdbValidation(contentType, contentId) {
         const key = this.generateImdbKey(contentType, contentId);
         return await this.getCachedData('imdb', key);
     }
 
-    /**
-     * Cache IMDB validation result
-     */
     async setImdbValidation(contentType, contentId, isValid, detailData = null) {
         const key = this.generateImdbKey(contentType, contentId);
         return await this.setCachedData('imdb', key, { isValid, detailData }, this.CACHE_TTLS.imdb);
@@ -531,24 +456,15 @@ class HybridCacheService {
 
     // ==================== TRANSLATION CACHE ====================
 
-    /**
-     * Generate cache key for translations
-     */
     generateTranslationKey(contentType, contentId, language, dataType = 'all') {
         return `translation:${contentType}:${contentId}:${language}:${dataType}`;
     }
 
-    /**
-     * Get cached translation data
-     */
     async getTranslation(contentType, contentId, language, dataType = 'all') {
         const key = this.generateTranslationKey(contentType, contentId, language, dataType);
         return await this.getCachedData('translation', key);
     }
 
-    /**
-     * Cache translation data
-     */
     async setTranslation(contentType, contentId, language, dataType = 'all', translationData) {
         const key = this.generateTranslationKey(contentType, contentId, language, dataType);
         return await this.setCachedData('translation', key, translationData, this.CACHE_TTLS.translation);
@@ -556,24 +472,15 @@ class HybridCacheService {
 
     // ==================== METADATA CACHE ====================
 
-    /**
-     * Generate cache key for metadata
-     */
     generateMetadataKey(contentType, contentId, language = null) {
         return language ? `metadata:${contentType}:${contentId}:${language}` : `metadata:${contentType}:${contentId}`;
     }
 
-    /**
-     * Get cached metadata
-     */
     async getMetadata(contentType, contentId, language = null) {
         const key = this.generateMetadataKey(contentType, contentId, language);
         return await this.getCachedData('metadata', key);
     }
 
-    /**
-     * Cache metadata
-     */
     async setMetadata(contentType, contentId, language = null, metadata) {
         const key = this.generateMetadataKey(contentType, contentId, language);
         return await this.setCachedData('metadata', key, metadata, this.CACHE_TTLS.metadata);
@@ -581,24 +488,15 @@ class HybridCacheService {
 
     // ==================== ARTWORK CACHE ====================
 
-    /**
-     * Generate cache key for artwork
-     */
     generateArtworkKey(contentType, contentId, artworkType = 'all') {
         return `artwork:${contentType}:${contentId}:${artworkType}`;
     }
 
-    /**
-     * Get cached artwork data
-     */
     async getArtwork(contentType, contentId, artworkType = 'all') {
         const key = this.generateArtworkKey(contentType, contentId, artworkType);
         return await this.getCachedData('artwork', key);
     }
 
-    /**
-     * Cache artwork data
-     */
     async setArtwork(contentType, contentId, artworkType = 'all', artworkData) {
         const key = this.generateArtworkKey(contentType, contentId, artworkType);
         return await this.setCachedData('artwork', key, artworkData, this.CACHE_TTLS.artwork);
@@ -606,37 +504,25 @@ class HybridCacheService {
 
     // ==================== SEASON CACHE ====================
 
-    /**
-     * Generate cache key for season data
-     */
     generateSeasonKey(seriesId, seasonNumber = null) {
         return seasonNumber ? `season:${seriesId}:${seasonNumber}` : `seasons:${seriesId}`;
     }
 
-    /**
-     * Get cached season data
-     */
     async getSeasonData(seriesId, seasonNumber = null) {
         const key = this.generateSeasonKey(seriesId, seasonNumber);
         return await this.getCachedData('season', key);
     }
 
-    /**
-     * Cache season data
-     */
     async setSeasonData(seriesId, seasonNumber = null, seasonData) {
         const key = this.generateSeasonKey(seriesId, seasonNumber);
         return await this.setCachedData('season', key, seasonData, this.CACHE_TTLS.season);
     }
 
-    /**
-     * Close MongoDB connection
-     */
     async disconnect() {
         if (this.mongoClient) {
             await this.mongoClient.close();
             this.mongoConnected = false;
-            console.log('🔌 MongoDB disconnected');
+            this.logger?.info('🔌 MongoDB disconnected');
         }
     }
 }

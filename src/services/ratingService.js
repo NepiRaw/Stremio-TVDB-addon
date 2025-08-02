@@ -1,10 +1,5 @@
 const axios = require('axios');
 const { logger } = require('../utils/logger');
-
-/**
- * Rating Service for fetching IMDb ratings using OMDB API (primary) and imdbapi.dev (fallback)
- * Integrates with the existing cache system for optimal performance
- */
 class RatingService {
     constructor(cacheService, omdbApiKey = null) {
         this.cacheService = cacheService;
@@ -61,7 +56,6 @@ class RatingService {
                         director: data.Director !== 'N/A' ? data.Director : null,
                         awards: data.Awards !== 'N/A' ? data.Awards : null,
                         
-                        // Extract additional IDs for cross-referencing
                         external_ids: this.extractOMDbExternalIds(data),
                         
                         fetched_at: new Date().toISOString()
@@ -84,7 +78,7 @@ class RatingService {
                 logger.debug(`OMDB attempt ${attempt + 1} failed for ${imdbId}: ${error.message}`);
                 
                 if (attempt < 2) {
-                    await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1))); // Progressive delay
+                    await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)));
                 }
             }
         }
@@ -100,7 +94,6 @@ class RatingService {
      * @returns {Object|null} Rating data or null if not found/failed
      */
     async getIMDbApiDevRating(imdbId, contentType = 'movie') {
-        // Try direct title endpoint first
         const directUrl = `${this.imdbApiDevBaseUrl}/titles/${imdbId}`;
         
         try {
@@ -134,7 +127,6 @@ class RatingService {
             logger.debug(`IMDbAPI.dev direct lookup failed for ${imdbId}: ${error.message}`);
         }
 
-        // Fallback to search endpoint
         try {
             const searchType = contentType === 'series' ? 'TV_SERIES' : 'MOVIE';
             const searchUrl = `${this.imdbApiDevBaseUrl}/v2/search/titles?query=${imdbId}&types=${searchType}`;
@@ -184,7 +176,6 @@ class RatingService {
 
         const cacheKey = `rating:${imdbId}`;
         
-        // Try to get from cache first
         try {
             const cachedData = await this.cacheService.getCachedData('metadata', cacheKey);
             if (cachedData) {
@@ -195,27 +186,22 @@ class RatingService {
             logger.error(`Cache error for rating: ${error.message}`);
         }
 
-        // Try OMDB first if API key is available
         let ratingData = await this.getOMDbRating(imdbId);
         
-        // Fallback to imdbapi.dev if OMDB failed
         if (!ratingData) {
             ratingData = await this.getIMDbApiDevRating(imdbId, contentType);
         }
 
-        // Cache the result
         const TTL = ratingData ? (7 * 24 * 60 * 60) : (60 * 60); // 7 days for success, 1 hour for failure
         
         if (ratingData) {
             await this.cacheService.setCachedData('metadata', cacheKey, ratingData, TTL);
             logger.debug(`Cached rating for ${imdbId}: ${ratingData.imdb_rating}/10 (source: ${ratingData.source})`);
             
-            // Cache external IDs separately if available
             if (ratingData.external_ids) {
                 await this.cacheExternalIds(ratingData.external_ids, imdbId, 30 * 24 * 60 * 60); // 30 days
             }
         } else {
-            // Cache negative result to avoid repeated lookups
             const emptyResult = { notFound: true };
             await this.cacheService.setCachedData('metadata', cacheKey, emptyResult, TTL);
             logger.debug(`Cached negative result for ${imdbId}`);
@@ -233,8 +219,7 @@ class RatingService {
     async batchGetRatings(imdbIds, contentType = 'movie') {
         const results = {};
         
-        // Process in parallel but limit concurrency to avoid overwhelming APIs
-        const concurrencyLimit = 3; // Lower than TMDB since these APIs might be more restrictive
+        const concurrencyLimit = 3; 
         const chunks = [];
         
         for (let i = 0; i < imdbIds.length; i += concurrencyLimit) {
@@ -252,7 +237,6 @@ class RatingService {
                 results[imdbId] = rating;
             });
             
-            // Add a small delay between chunks to be respectful to the APIs
             if (chunks.indexOf(chunk) < chunks.length - 1) {
                 await new Promise(resolve => setTimeout(resolve, 500));
             }
@@ -269,13 +253,10 @@ class RatingService {
     extractOMDbExternalIds(data) {
         const externalIds = {};
         
-        // IMDb ID is always present
         if (data.imdbID) {
             externalIds.imdb_id = data.imdbID;
         }
         
-        // OMDB doesn't provide other external IDs directly,
-        // but we can infer some from other fields
         if (data.Type) {
             externalIds.content_type = data.Type; // movie, series, episode
         }
