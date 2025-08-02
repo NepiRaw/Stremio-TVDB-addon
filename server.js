@@ -21,28 +21,28 @@ const CacheFactory = require('./src/services/cache/cacheFactory');
 function logEnvVar(name, value, opts = {}) {
     if (value === undefined || value === null || value === "") {
         if (opts.required) {
-            console.error(`❌ Required environment variable ${name} is missing!`);
+            logger.error(`❌ Required environment variable ${name} is missing!`);
         } else if (opts.fallback) {
-            console.warn(`⚠️  ${name} not set. Using fallback: ${opts.fallback}`);
+            logger.warn(`⚠️  ${name} not set. Using fallback: ${opts.fallback}`);
         } else {
-            console.info(`ℹ️  Optional environment variable ${name} not set.`);
+            logger.info(`ℹ️  Optional environment variable ${name} not set.`);
         }
     } else {
         if (name === 'OMDB_API_KEY') {
-            console.info(`🔑 OMDB_API_KEY is set [hidden]`);
+            logger.info(`🔑 OMDB_API_KEY is set [hidden]`);
         } else if (name === 'MONGODB_URI') {
             const uri = value;
             const match = uri.match(/^(mongodb(?:\+srv)?:\/\/)([^:]+):([^@]+)@(.+)$/);
             if (match) {
                 const safeUri = `${match[1]}[hidden]:[hidden]@${match[4]}`;
-                console.info(`🔧 MONGODB_URI = ${safeUri}`);
+                logger.info(`🔧 MONGODB_URI = ${safeUri}`);
             } else {
-                console.info(`🔧 MONGODB_URI = [hidden or invalid format]`);
+                logger.info(`🔧 MONGODB_URI = [hidden or invalid format]`);
             }
         } else if (opts.sensitive) {
-            console.info(`🔑 ${name} is set [hidden]`);
+            logger.info(`🔑 ${name} is set [hidden]`);
         } else {
-            console.info(`🔧 ${name} = ${value}`);
+            logger.info(`🔧 ${name} = ${value}`);
         }
     }
 }
@@ -69,12 +69,12 @@ let ratingService = null;
 try {
     ratingService = new RatingService(cacheService, process.env.OMDB_API_KEY);
     if (process.env.OMDB_API_KEY) {
-        console.log('🎬 Rating service initialized with OMDB API - IMDb ratings will be enhanced');
+        logger.info('🎬 Rating service initialized with OMDB API - IMDb ratings will be enhanced');
     } else {
-        console.log('🎬 Rating service initialized with imdbapi.dev fallback - IMDb ratings will be enhanced');
+        logger.info('🎬 Rating service initialized with imdbapi.dev fallback - IMDb ratings will be enhanced');
     }
 } catch (error) {
-    console.error('❌ Failed to initialize Rating service:', error.message);
+    logger.error('❌ Failed to initialize Rating service:', error.message);
 }
 
 const tvdbService = new TVDBService(cacheService, ratingService, logger);
@@ -261,35 +261,32 @@ app.use('*', (req, res) => {
 });
 
 const server = app.listen(PORT, async () => {
-    console.log(`🚀 TVDB Stremio Addon server running on port ${PORT}`);
-    
+    logger.info(`🚀 TVDB Stremio Addon server running on port ${PORT}`);
     const baseUrl = process.env.BASE_URL;
     if (baseUrl && baseUrl.trim()) {
         const mockReq = { protocol: 'http', get: () => `localhost:${PORT}` };
         const { getBaseUrl } = require('./src/utils/urlBuilder');
         const actualBaseUrl = getBaseUrl(mockReq);
-        
-        console.log(`📱 Installation page: ${actualBaseUrl}/`);
-        console.log(`📋 Manifest: ${actualBaseUrl}/manifest.json`);
-        console.log(`🌐 Production deployment detected`);
+        logger.info(`📱 Installation page: ${actualBaseUrl}/`);
+        logger.info(`📋 Manifest: ${actualBaseUrl}/manifest.json`);
+        logger.info(`🌐 Production deployment detected`);
     } else {
-        console.log(`📱 Installation page: http://localhost:${PORT}`);
-        console.log(`📋 Manifest: http://localhost:${PORT}/manifest.json`);
-        console.log(`🔧 Development mode (auto-detect URLs from requests)`);
+        logger.info(`📱 Installation page: http://localhost:${PORT}`);
+        logger.info(`📋 Manifest: http://localhost:${PORT}/manifest.json`);
+        logger.info(`🔧 Development mode (auto-detect URLs from requests)`);
     }
-    
     try {
         await tvdbService.start();
     } catch (error) {
-        console.error('❌ Failed to start TVDB service:', error.message);
+        logger.error('❌ Failed to start TVDB service:', error.message);
     }
 });
 
 process.on('SIGTERM', () => {
-    console.log('SIGTERM received, shutting down gracefully...');
+    logger.info('SIGTERM received, shutting down gracefully...');
     tvdbService.stop();
     server.close(() => {
-        console.log('Process terminated');
+        logger.info('Process terminated');
     });
 });
 

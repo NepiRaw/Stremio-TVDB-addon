@@ -86,8 +86,6 @@ class MetadataTransformer {
         } catch (error) {
             if (this.logger?.error) {
                 this.logger.error('Error transforming detailed metadata:', error);
-            } else {
-                console.error('Error transforming detailed metadata:', error);
             }
             return null;
         }
@@ -200,7 +198,7 @@ class MetadataTransformer {
 
     addEnhancedYear(meta, item) {
         if (meta.type === 'movie' && meta.year) {
-            console.log(`📅 Preserving theatrical year for movie: ${meta.year}`);
+            this.logger?.info?.(`📅 Preserving theatrical year for movie: ${meta.year}`);
             return;
         }
         
@@ -210,25 +208,23 @@ class MetadataTransformer {
         if (meta.type === 'series' && startYear) {
             const lastAiredDate = item.lastAired ? new Date(item.lastAired) : null;
             const endYear = lastAiredDate ? lastAiredDate.getFullYear() : null;
-            
             const status = this.extractValidStatus(item.status);
-            
             if (status === 'ended' && endYear && endYear !== startYear) {
                 meta.year = `${startYear}-${endYear}`;
-                console.log(`📅 Series date range: ${meta.year}`);
+                this.logger?.info?.(`📅 Series date range: ${meta.year}`);
             } else if (status === 'ended') {
                 meta.year = startYear;
-                console.log(`📅 Series year: ${meta.year}`);
+                this.logger?.info?.(`📅 Series year: ${meta.year}`);
             } else if (status === 'continuing') {
                 meta.year = `${startYear}-`;
-                console.log(`📅 Ongoing series: ${meta.year}`);
+                this.logger?.info?.(`📅 Ongoing series: ${meta.year}`);
             } else {
                 if (endYear && endYear !== startYear) {
                     meta.year = `${startYear}-${endYear}`;
                 } else {
                     meta.year = startYear;
                 }
-                console.log(`📅 Series year (unknown status): ${meta.year}`);
+                this.logger?.info?.(`📅 Series year (unknown status): ${meta.year}`);
             }
         } else if (meta.type === 'movie' && !meta.year) {
             meta.year = startYear;
@@ -240,33 +236,26 @@ class MetadataTransformer {
         
         try {
             const releaseInfo = getEnhancedReleaseInfo(item, tvdbLanguage);
-            
             if (releaseInfo.year) {
                 meta.year = releaseInfo.year;
             }
-            
             if (releaseInfo.releaseInfo) {
                 meta.releaseInfo = releaseInfo.releaseInfo;
             }
-            
             if (releaseInfo.released) {
                 meta.released = releaseInfo.released;
             }
-            
             if (releaseInfo.statusMessage) {
                 const currentDescription = meta.description || '';
-                
                 if (currentDescription) {
                     meta.description = `${releaseInfo.statusMessage}\n\n${currentDescription}`;
                 } else {
                     meta.description = releaseInfo.statusMessage;
                 }
-                
-                console.log(`🎬 Added theatrical status: ${releaseInfo.statusMessage}`);
+                this.logger?.info?.(`🎬 Added theatrical status: ${releaseInfo.statusMessage}`);
             }
-            
         } catch (error) {
-            console.error('Error adding theatrical status:', error);
+            this.logger?.error?.('Error adding theatrical status:', error);
         }
     }
 
@@ -306,7 +295,7 @@ class MetadataTransformer {
         
         if (isAnimatedContent) {
             // Skip cast for anime/animation content
-            console.log(`🎭 Skipping cast for animated content: ${meta.name}`);
+            this.logger?.info?.(`🎭 Skipping cast for animated content: ${meta.name}`);
             return;
         }
 
@@ -332,7 +321,7 @@ class MetadataTransformer {
 
         if (topActors.length > 0) {
             meta.cast = topActors;
-            console.log(`🎭 Added ${topActors.length} cast members (sorted by importance): ${topActors.join(', ')}`);
+            this.logger?.info?.(`🎭 Added ${topActors.length} cast members (sorted by importance): ${topActors.join(', ')}`);
         }
     }
 
@@ -363,7 +352,7 @@ class MetadataTransformer {
         }
 
         const validSeasons = this.contentFetcher.filterValidSeasons(seasonsData);
-        console.log(`📺 Filtered to ${validSeasons.length} official seasons`);
+        this.logger?.info?.(`📺 Filtered to ${validSeasons.length} official seasons`);
 
         if (validSeasons.length === 0) {
             meta.behaviorHints = { defaultVideoId: null, hasScheduledVideos: false };
@@ -374,8 +363,7 @@ class MetadataTransformer {
             meta.behaviorHints = { defaultVideoId: null, hasScheduledVideos: false };
             return;
         }
-
-        console.log(`📺 Got ${episodes.length} episodes from API`);
+        this.logger?.info?.(`📺 Got ${episodes.length} episodes from API`);
 
         const translations = await this.translationService.getBulkEpisodeTranslations(numericId, tvdbLanguage);
         const { primaryLookup, fallbackLookup } = this.translationService.createTranslationLookups(
@@ -383,15 +371,14 @@ class MetadataTransformer {
         );
 
         const airedEpisodes = this.contentFetcher.filterAiredEpisodes(episodes);
-        console.log(`📺 Filtered to ${airedEpisodes.length} episodes (aired + upcoming)`);
+        this.logger?.info?.(`📺 Filtered to ${airedEpisodes.length} episodes (aired + upcoming)`);
 
         const episodesBySeason = this.contentFetcher.groupEpisodesBySeason(airedEpisodes);
         const seasonsWithContent = validSeasons.filter(season => 
             episodesBySeason[season.number] && episodesBySeason[season.number].length > 0
         );
-
         meta.seasons = seasonsWithContent.length;
-        console.log(`📺 Final seasons with content: ${meta.seasons}`);
+        this.logger?.info?.(`📺 Final seasons with content: ${meta.seasons}`);
 
         const videoMap = new Map();
         for (const episode of airedEpisodes) {
@@ -419,7 +406,7 @@ class MetadataTransformer {
         }
 
         meta.videos = Array.from(videoMap.values());
-        console.log(`📺 Created ${meta.videos.length} video entries`);
+        this.logger?.info?.(`📺 Created ${meta.videos.length} video entries`);
 
         meta.behaviorHints = {
             defaultVideoId: null,
@@ -428,7 +415,7 @@ class MetadataTransformer {
     }
 
     addMovieContent(meta, imdbId) {
-        console.log(`🎬 Movie processing complete: ${meta.name} (${meta.id})`);
+        this.logger?.info?.(`🎬 Movie processing complete: ${meta.name} (${meta.id})`);
         
         if (meta.videos) {
             delete meta.videos;

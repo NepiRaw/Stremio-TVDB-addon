@@ -88,7 +88,7 @@ class HybridCacheService {
             }
             this.logger?.info('📇 MongoDB indexes created successfully');
         } catch (error) {
-            console.error('❌ Error creating MongoDB indexes:', error.message);
+            this.logger?.error?.('❌ Error creating MongoDB indexes:', error.message);
         }
     }
 
@@ -137,7 +137,7 @@ class HybridCacheService {
                     return mongoEntry.data;
                 }
             } catch (error) {
-                console.error(`❌ MongoDB cache read error: ${error.message}`);
+                this.logger?.error?.(`❌ MongoDB cache read error: ${error.message}`);
             }
         }
         
@@ -159,7 +159,7 @@ class HybridCacheService {
         
         if (this.mongoConnected) {
             this.storeInMongoDB(cacheType, key, data, expiry).catch(error => {
-                console.error(`❌ MongoDB cache write error: ${error.message}`);
+                this.logger?.error?.(`❌ MongoDB cache write error: ${error.message}`);
             });
         }
         
@@ -229,7 +229,7 @@ class HybridCacheService {
                     }
                 }
             } catch (error) {
-                console.error(`❌ Error clearing MongoDB cache by pattern: ${error.message}`);
+                this.logger?.error?.(`❌ Error clearing MongoDB cache by pattern: ${error.message}`);
             }
         }
 
@@ -308,7 +308,7 @@ class HybridCacheService {
 
             return results;
         } catch (error) {
-            console.error('❌ Error inspecting L2 cache:', error.message);
+            this.logger?.error?.('❌ Error inspecting L2 cache:', error.message);
             return { error: error.message, entries: [] };
         }
     }
@@ -361,7 +361,7 @@ class HybridCacheService {
 
             return summary;
         } catch (error) {
-            console.error('❌ Error getting L2 summary:', error.message);
+            this.logger?.error?.('❌ Error getting L2 summary:', error.message);
             return { error: error.message };
         }
     }
@@ -433,7 +433,7 @@ class HybridCacheService {
                 }
                 this.logger?.info('🗑️ Cleared all L2 caches:', l2Counts);
             } catch (error) {
-                console.error('❌ Error clearing L2 caches:', error.message);
+                this.logger?.error?.('❌ Error clearing L2 caches:', error.message);
             }
         }
     }

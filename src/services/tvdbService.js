@@ -23,7 +23,7 @@ class TVDBService {
         this.tokenExpiry = null;
         
         if (!this.apiKey) {
-            console.error('❌ TVDB_API_KEY is missing! Please set it in your .env file. The addon cannot function without it.');
+            this.logger.error('❌ TVDB_API_KEY is missing! Please set it in your .env file. The addon cannot function without it.');
             throw new Error('TVDB_API_KEY environment variable is required');
         }
 
@@ -44,19 +44,19 @@ class TVDBService {
      * Start the TVDB service including updates monitoring
      */
     async start() {
-        console.log('🚀 Starting TVDB service...');
+        this.logger.info('🚀 Starting TVDB service...');
         
         await this.ensureValidToken();
         
         this.updatesService.start();
         
-        console.log('✅ TVDB service started with updates monitoring');
+        this.logger.info('✅ TVDB service started with updates monitoring');
     }
 
     stop() {
-        console.log('🛑 Stopping TVDB service...');
+        this.logger.info('🛑 Stopping TVDB service...');
         this.updatesService.stop();
-        console.log('✅ TVDB service stopped');
+        this.logger.info('✅ TVDB service stopped');
     }
 
     async authenticate() {
@@ -68,10 +68,10 @@ class TVDBService {
             this.token = response.data.data.token;
             this.tokenExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000);
             
-            console.log('✅ TVDB authentication successful');
+            this.logger.info('✅ TVDB authentication successful');
             return this.token;
         } catch (error) {
-            console.error('❌ TVDB authentication failed:', error.response?.data || error.message);
+            this.logger.error('❌ TVDB authentication failed:', error.response?.data || error.message);
             throw new Error('Failed to authenticate with TVDB API');
         }
     }
@@ -98,7 +98,7 @@ class TVDBService {
             return response.data;
         } catch (error) {
             if (error.response?.status === 401) {
-                console.log('🔄 Token expired, refreshing...');
+                this.logger.info('🔄 Token expired, refreshing...');
                 await this.authenticate();
                 
                 const retryResponse = await axios.get(`${this.baseURL}${endpoint}`, {
@@ -112,7 +112,7 @@ class TVDBService {
                 return retryResponse.data;
             }
             
-            console.error(`❌ TVDB API error for ${endpoint}:`, error.response?.data || error.message);
+            this.logger.error(`❌ TVDB API error for ${endpoint}:`, error.response?.data || error.message);
             throw error;
         }
     }
@@ -153,7 +153,7 @@ class TVDBService {
             
             return results;
         } catch (error) {
-            console.error('Search error:', error.message);
+            this.logger.error('Search error:', error.message);
             return [];
         }
     }
@@ -171,7 +171,7 @@ class TVDBService {
                 total: movieResults.length + seriesResults.length
             };
         } catch (error) {
-            console.error('Parallel search error:', error.message);
+            this.logger.error('Parallel search error:', error.message);
             return { movies: [], series: [], total: 0 };
         }
     }
@@ -250,11 +250,11 @@ class TVDBService {
         try {
             const cachedMeta = await this.cacheService.getCachedData('metadata', cacheKey);
             if (cachedMeta && !cachedMeta.notFound) {
-                console.log(`✅ Enhanced metadata cache hit for ${item.name || itemId}`);
+                this.logger.info(`✅ Enhanced metadata cache hit for ${item.name || itemId}`);
                 return cachedMeta;
             }
         } catch (error) {
-            console.error(`Cache error for enhanced metadata: ${error.message}`);
+            this.logger.error(`Cache error for enhanced metadata: ${error.message}`);
         }
         
         const meta = await this.metadataTransformer.transformDetailedToStremioMeta(item, type, seasonsData, tvdbLanguage);
@@ -265,56 +265,44 @@ class TVDBService {
         
         if (this.ratingService && meta && meta.imdb_id) {
             try {
-                console.log(`🎬 Enriching ${meta.name} (${meta.imdb_id}) with IMDb ratings...`);
-                
+                this.logger.info(`🎬 Enriching ${meta.name} (${meta.imdb_id}) with IMDb ratings...`);
                 const ratingData = await this.ratingService.getImdbRating(meta.imdb_id, type);
-                
                 if (ratingData && !ratingData.notFound) {
                     if (ratingData.imdb_rating) {
                         meta.imdbRating = ratingData.imdb_rating;
                     }
-                    
                     if (!meta.votes && ratingData.imdb_votes) {
                         meta.votes = ratingData.imdb_votes;
                     }
-                    
                     if (ratingData.metascore) {
                         meta.metascore = ratingData.metascore;
                     }
-                    
                     if (ratingData.rotten_tomatoes) {
                         meta.rottenTomatoes = ratingData.rotten_tomatoes;
                     }
-                    
                     if (ratingData.plot && (!meta.description || meta.description.length < 100)) {
                         meta.description = ratingData.plot;
                     }
-                    
                     if (!meta.runtime && ratingData.runtime) {
                         meta.runtime = ratingData.runtime;
                     }
-                    
                     if (!meta.genre && ratingData.genre) {
                         meta.genre = ratingData.genre.split(', ');
                     }
-                    
                     if (!meta.director && ratingData.director) {
                         meta.director = ratingData.director.split(', ');
                     }
-                    
                     if (ratingData.awards) {
                         meta.awards = ratingData.awards;
                     }
-                    
                     if (ratingData.external_ids) {
                         meta.external_ids = { ...meta.external_ids, ...ratingData.external_ids };
                     }
-                    
                 } else {
-                    console.log(`ℹ️  No IMDb rating data found for ${meta.imdb_id}`);
+                    this.logger.info(`ℹ️  No IMDb rating data found for ${meta.imdb_id}`);
                 }
             } catch (error) {
-                console.error(`❌ Failed to enrich metadata with IMDb ratings for ${meta.imdb_id}:`, error.message);
+                this.logger.error(`❌ Failed to enrich metadata with IMDb ratings for ${meta.imdb_id}:`, error.message);
             }
         }
         
@@ -322,9 +310,9 @@ class TVDBService {
         const TTL = 24 * 60 * 60 * 1000; // 24 hours in ms
         try {
             await this.cacheService.setCachedData('metadata', cacheKey, meta, TTL);
-            console.log(`📦 Cached enhanced metadata for ${meta.name || itemId} (24h TTL)`);
+            this.logger.info(`📦 Cached enhanced metadata for ${meta.name || itemId} (24h TTL)`);
         } catch (error) {
-            console.error(`Failed to cache enhanced metadata: ${error.message}`);
+            this.logger.error(`Failed to cache enhanced metadata: ${error.message}`);
         }
         
         return meta;
