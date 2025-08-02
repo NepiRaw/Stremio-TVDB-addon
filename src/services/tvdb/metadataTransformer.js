@@ -38,6 +38,33 @@ class MetadataTransformer {
                 tvdb_id: numericId,
                 ...externalIds
             };
+
+            if (stremioType === 'series') {
+                if (item.firstAired) {
+                    meta.released = new Date(item.firstAired).toISOString();
+                }
+                let startYear = item.firstAired ? new Date(item.firstAired).getFullYear() : null;
+                let endYear = item.lastAired ? new Date(item.lastAired).getFullYear() : null;
+                let status = this.extractValidStatus(item.status);
+                let yearStr = '';
+                if (startYear) {
+                    if (status === 'ended' && endYear && endYear !== startYear) {
+                        yearStr = `${startYear}-${endYear}`;
+                    } else if (status === 'ended') {
+                        yearStr = `${startYear}`;
+                    } else if (status === 'continuing') {
+                        yearStr = `${startYear}-`;
+                    } else if (endYear && endYear !== startYear) {
+                        yearStr = `${startYear}-${endYear}`;
+                    } else {
+                        yearStr = `${startYear}`;
+                    }
+                }
+                if (yearStr) {
+                    meta.year = yearStr;
+                    meta.releaseInfo = yearStr;
+                }
+            }
             await this.applyTranslations(meta, stremioType, numericId, tvdbLanguage, item);
             await this.applyArtwork(meta, stremioType, numericId, tvdbLanguage, item);
             this.addBasicMetadata(meta, item, tvdbLanguage);
