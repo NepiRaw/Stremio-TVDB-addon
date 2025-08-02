@@ -12,6 +12,7 @@ cache/
 └── utils/
     ├── cacheMigration.js       # Migration utility for cache strategies
     └── inspectL2Cache.js       # MongoDB cache inspection tool
+    └── clearCache.js           # Cache clearing utility
 ```
 
 ## Services
@@ -43,6 +44,7 @@ cache/
 - Performance comparison between cache strategies
 - Data integrity verification
 - Production transition assistance
+- View cache statistics and summaries and clear all entries
 
 **Usage:**
 ```bash
@@ -74,13 +76,26 @@ node src/services/cache/utils/inspectL2Cache.js details [cacheType] [limit]
 node src/services/cache/utils/inspectL2Cache.js search "searchTerm"
 ```
 
+### `utils/clearCache.js`
+**Purpose**: Comprehensive MongoDB cache clearing utility.
+
+**Key Functions:**
+- Clear all cache entries
+- Reset cache statistics
+
+**Usage:**
+```bash
+# Clear all cache entries
+node src/services/cache/utils/clearCache.js
+```
+
 ## Configuration
 
 Cache behavior is controlled by environment variables:
 
 ```bash
 # Cache strategy selection
-CACHE_TYPE=hybrid                    # 'memory' or 'hybrid'
+CACHE_TYPE=hybrid                    # 'memory' or 'hybrid' (recommended) or 'mongodb'
 
 # MongoDB configuration (required for hybrid)
 MONGODB_URI=mongodb+srv://...
