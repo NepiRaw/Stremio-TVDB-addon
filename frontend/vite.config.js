@@ -6,7 +6,7 @@ export default defineConfig({
   plugins: [vue()],
   base: '/',
   build: {
-    outDir: fileURLToPath(new URL('../public', import.meta.url)),
+    outDir: 'public',
     emptyOutDir: true
   },
   server: {
