@@ -1,11 +1,22 @@
+
+<div align="center">
+
 # Stremio TVDB Addon
 
-![Stremio](https://img.shields.io/badge/Stremio-Addon-purple)
-![Release](https://img.shields.io/github/v/release/NepiRaw/Stremio-TVDB-addon?label=Release)
-![Node.js](https://img.shields.io/badge/Node.js-18+-brightgreen)
+<p>
+  <img src="https://img.shields.io/badge/Stremio-Addon-purple" alt="Stremio" />
+  <img src="https://img.shields.io/github/v/release/NepiRaw/Stremio-TVDB-addon?label=Release" alt="Release" />
+  <img src="https://img.shields.io/badge/Node.js-18+-brightgreen" alt="Node.js" />
+</p>
 
-Stremio addon that provides comprehensive catalog search functionality using TVDB (The TV Database) API for movies, series, and anime with intelligent caching and IMDb rating integration.
-Unofficial - not affiliated with TVDB.
+</div>
+
+---
+
+<p align="center"><i>Stremio addon that provides comprehensive catalog search functionality using TVDB (The TV Database) API for movies, series, and anime with intelligent caching and IMDb rating integration.<br>
+<b>Unofficial - not affiliated with TVDB.</b></i></p>
+
+---
 
 ## 🎯 Features
 
@@ -17,10 +28,10 @@ Unofficial - not affiliated with TVDB.
 
 ## 📋 Table of Contents
 
-- [Configuration](#-configuration)
+- [Configuration](#%EF%B8%8F-configuration)
 - [Self-Hosting Installation](#-self-hosting-installation)
-  - [Docker Compose (Recommended)](#docker-compose-recommended)
-  - [Manual Installation](#manual-installation)
+  - [Docker Compose (Recommended)](#-docker-compose-recommended)
+  - [Manual Installation](#-manual-installation)
   - [Vercel Deployment](#vercel-deployment)
 - [Environment Variables](#-environment-variables)
 - [API Documentation](#-api-documentation)
@@ -38,8 +49,6 @@ Unofficial - not affiliated with TVDB.
 - **Language Selection**: Choose from 11 supported languages
   - Content metadata will be shown in your preferred language when available
   - Falls back to English if translation unavailable
-- **Cache Type**: Automatically managed based on your environment setup
-- **Rating Enhancement**: Automatic IMDb rating integration when available
 
 ## 🚀 Self-Hosting Installation
 
@@ -84,6 +93,8 @@ docker-compose up -d
 
 3. **Access your addon at `http://localhost:3000` (or any other configured domain)**
 
+
+
 ### 🐍 Manual Installation
 
 1. **Prerequisites:**
@@ -109,6 +120,8 @@ npm start
 
 3. **Access your addon at `http://localhost:3000` (or any other configured domain)**
 
+
+
 ### 🔺Vercel Deployment
 
 1. **Copy this repository to your GitHub account**
@@ -121,6 +134,8 @@ npm start
 3. **Environment Variables in Vercel:**
    - Set all required variables from the table below
    - Use MongoDB Atlas for database (free tier available)
+
+---
 
 ## 🔧 Environment Variables
 
@@ -140,6 +155,8 @@ npm start
 - **`hybrid`**: L1 (memory) + L2 (MongoDB) - **Recommended for production**
 - **`mongodb`**: MongoDB-only cache, slower but full persistence
 
+---
+
 ## 📡 API Documentation
 
 ### Public Endpoints
@@ -156,14 +173,24 @@ npm start
 
 *Admin endpoints require `ADMIN_API_KEY` and are rate-limited (10 req/min per IP)*
 
-## Future Enhancements
+
+---
+
+## 🌟 Future Enhancements
+
 - [ ] Content recommendations (popular, trending, ...)
 
-## Documentation
+---
+
+## 📚 Documentation
 
 - [API Documentation](docs/API.md) - Complete API reference with admin endpoints
 - [Development Guide](docs/DEVELOPMENT.md) - Development setup and architectural patterns  
 - [Deployment Guide](docs/DEPLOYMENT.md) - Production deployment with security considerations
 - [Caching Strategy](docs/CACHING_STRATEGY.md) - Performance optimization and updates system
 
-## Enjoy 😊
+---
+
+<div align="center">
+<b>Enjoy 😊</b>
+</div>

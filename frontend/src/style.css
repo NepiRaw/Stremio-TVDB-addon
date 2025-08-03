@@ -232,13 +232,15 @@ body {
 .dropdown-menu::before {
   content: '';
   position: absolute;
-  top: -10px;
-  right: 20px;
+  top: 25px;
+  left: -10px;
   width: 0;
   height: 0;
-  border-left: 10px solid transparent;
-  border-right: 10px solid transparent;
-  border-bottom: 10px solid #222D2E;
+  border-top: 10px solid transparent;
+  border-bottom: 10px solid transparent;
+  border-right: 10px solid #222D2E;
+  border-left: none;
+  transform: rotate(0deg);
 }
 
 .dropdown-menu.dropdown-up {

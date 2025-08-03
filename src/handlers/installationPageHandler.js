@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const packageJson = require('../../package.json');
 const { buildManifestUrl } = require('../utils/urlBuilder');
+const catalogConfig = require('../config/catalogConfig');
 
 async function installationPageHandler(req, res, logger = null) {
     try {
@@ -10,8 +11,8 @@ async function installationPageHandler(req, res, logger = null) {
         const { getBaseUrl } = require('../utils/urlBuilder');
         const baseUrl = getBaseUrl(req);
         
-        const isTmdbConfigured = !!(process.env.TMDB_API_KEY && process.env.TMDB_API_KEY.trim() !== '');
-        const title = isTmdbConfigured ? 'TVDB Catalog' : 'TVDB Search';
+        const currentMode = catalogConfig.getCurrentMode();
+        const title = currentMode.id === 'catalog' ? 'TVDB Catalog' : 'TVDB Search';
         const manifestUrlTemplate = `${baseUrl}/{{LANG}}/manifest.json`;
         
         html = html.replace('{{TITLE}}', title);

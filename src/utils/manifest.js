@@ -1,17 +1,16 @@
 const packageJson = require('../../package.json');
 const { buildCatalogUrl, buildMetaUrl } = require('./urlBuilder');
 const { isValidTvdbLanguage, getDisplayName, DEFAULT_LANGUAGE } = require('./languageMap');
+const catalogConfig = require('../config/catalogConfig');
 
 function getManifest(tvdbLanguage = DEFAULT_LANGUAGE, req) {
     const isValidLanguage = isValidTvdbLanguage(tvdbLanguage);
     const finalLanguage = isValidLanguage ? tvdbLanguage : DEFAULT_LANGUAGE;
     const languageDisplayName = getDisplayName(finalLanguage);
     
-    // Determine addon mode based on Catalog API key presence
-    const isTmdbConfigured = !!(process.env.TMDB_API_KEY && process.env.TMDB_API_KEY.trim() !== '');
-    const mode = isTmdbConfigured ? 'catalog' : 'search-only';
+    const currentMode = catalogConfig.getCurrentMode();
+    const mode = currentMode.id;
     
-    // Base manifest structure
     const manifest = {
         id: `community.stremio.tvdb-addon-${finalLanguage}`,
         version: packageJson.version,
@@ -36,92 +35,7 @@ function getManifest(tvdbLanguage = DEFAULT_LANGUAGE, req) {
         background: 'https://thetvdb.com/images/background.jpg'
     };
     
-    // Mode-specific catalog definitions
-    if (mode === 'catalog') {
-        manifest.catalogs = [
-            {
-                type: 'movie',
-                id: 'tmdb-popular-movies',
-                name: 'TVDB - Popular Movies',
-                extra: [
-                    { name: 'skip', isRequired: false }
-                ]
-            },
-            {
-                type: 'movie', 
-                id: 'tmdb-trending-movies',
-                name: 'TVDB - Trending Movies',
-                extra: [
-                    { name: 'skip', isRequired: false }
-                ]
-            },
-            {
-                type: 'series',
-                id: 'tvdb-popular-series',
-                name: 'TVDB - Popular Series',
-                extra: [
-                    { name: 'skip', isRequired: false }
-                ]
-            },
-            {
-                type: 'series',
-                id: 'tvdb-trending-series', 
-                name: 'TVDB - Trending Series',
-                extra: [
-                    { name: 'skip', isRequired: false }
-                ]
-            },
-            // Search catalogs
-            {
-                type: 'movie',
-                id: 'tvdb-movies-search',
-                name: 'TVDB - Movies (Search)',
-                extra: [
-                    {
-                        name: 'search',
-                        isRequired: true
-                    }
-                ]
-            },
-            {
-                type: 'series',
-                id: 'tvdb-series-search',
-                name: 'TVDB - Series & Anime (Search)',
-                extra: [
-                    {
-                        name: 'search',
-                        isRequired: true
-                    }
-                ]
-            }
-        ];
-    } else {
-        // Search-only mode
-        manifest.catalogs = [
-            {
-                type: 'movie',
-                id: 'tvdb-movies',
-                name: 'TVDB - Movies (Search)',
-                extra: [
-                    {
-                        name: 'search',
-                        isRequired: true
-                    }
-                ]
-            },
-            {
-                type: 'series',
-                id: 'tvdb-series',
-                name: 'TVDB - Series & Anime (Search)',
-                extra: [
-                    {
-                        name: 'search',
-                        isRequired: true
-                    }
-                ]
-            }
-        ];
-    }
+    manifest.catalogs = catalogConfig.getManifestCatalogs();
     
     return manifest;
 }

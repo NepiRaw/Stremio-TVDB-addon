@@ -19,7 +19,18 @@
       
       <!-- Description -->
       <div class="text-gray-300 text-[1.2rem] leading-relaxed mb-10">
-        {{ appConfig.ui?.description || 'Loading...' }}
+        <template v-if="appConfig.ui?.description">
+          {{ appConfig.ui.description }}
+          <img
+            src="https://thetvdb.com/images/logo.svg"
+            alt="TVDB"
+            style="display:inline;vertical-align:middle;width:2.2em;height:1em;margin:0 0.2em;filter:brightness(0) invert(1);"
+          />
+          search functionality with detailed metadata for movies, series, and anime.
+        </template>
+        <template v-else>
+          Loading...
+        </template>
       </div>
 
       <!-- Features -->
@@ -143,11 +154,11 @@
           <i class="fas fa-chevron-down"></i>
         </button>
         
-        <!-- Dropdown Menu -->
+        <!-- Dropdown Menu (expands right) -->
         <div 
           v-show="showDropdown"
           class="dropdown-menu"
-          :class="{ 'dropdown-up': shouldShowDropdownUp }"
+          style="left: 100%; top: 0; right: auto; margin-left: 10px; margin-top: 0;"
         >
           <a 
             v-for="item in dropdownItems" 
@@ -249,8 +260,14 @@ export default {
           if (config.ui && config.ui.title) {
             document.title = config.ui.title + ' - Stremio Addon';
           }
-          if (config.features?.advancedConfig) {
-            await loadCatalogConfig();
+          if (config.features?.advancedConfig && config.ui?.catalogs) {
+            // Use centralized catalog configuration from app-config
+            catalogConfigs.movies = config.ui.catalogs.movies || [];
+            catalogConfigs.series = config.ui.catalogs.series || [];
+            catalogConfigs.anime = config.ui.catalogs.anime || [];
+            
+            // Apply user's saved states
+            loadUserCatalogStates();
           } else {
             flushCatalogConfigStorage();
             catalogConfigs.movies = [];
@@ -271,61 +288,54 @@ export default {
       }
     }
 
-    const loadCatalogConfig = async () => {
-      try {
-        const response = await fetch('/api/catalog-defaults');
-        if (response.ok) {
-          const sharedConfig = await response.json();
-          
-          catalogConfigs.movies = sharedConfig.movieCatalogs?.map(catalog => ({
-            ...catalog,
-            icon: getIconForCategory(catalog.id),
-            tooltip: getTooltipForCatalog(catalog.id, 'movie')
-          })) || [];
-          
-          catalogConfigs.series = sharedConfig.seriesCatalogs?.map(catalog => ({
-            ...catalog,
-            icon: getIconForCategory(catalog.id),
-            tooltip: getTooltipForCatalog(catalog.id, 'series')
-          })) || [];
-          
-          console.log('📋 Loaded catalog configuration');
-        } else {
-          console.warn('Failed to load catalog config');
+    const loadUserCatalogStates = () => {
+      Object.keys(catalogConfigs).forEach(type => {
+        const savedOrder = localStorage.getItem(getStorageKey(type, 'order'));
+        const savedToggles = localStorage.getItem(getStorageKey(type, 'toggles'));
+        
+        if (savedOrder) {
+          try {
+            const orderArray = JSON.parse(savedOrder);
+            const orderedCatalogs = [];
+            const unorderedCatalogs = [...catalogConfigs[type]];
+            
+            orderArray.forEach(id => {
+              const catalog = unorderedCatalogs.find(c => c.id === id);
+              if (catalog) {
+                orderedCatalogs.push(catalog);
+                unorderedCatalogs.splice(unorderedCatalogs.indexOf(catalog), 1);
+              }
+            });
+            
+            catalogConfigs[type] = [...orderedCatalogs, ...unorderedCatalogs];
+          } catch (error) {
+            console.warn(`Failed to parse saved order for ${type}:`, error);
+          }
         }
-      } catch (error) {
-        console.error('Error loading catalog config:', error);
-      }
+        
+        if (savedToggles) {
+          try {
+            const toggles = JSON.parse(savedToggles);
+            catalogConfigs[type].forEach(catalog => {
+              if (toggles.hasOwnProperty(catalog.id)) {
+                catalog.enabled = toggles[catalog.id];
+              }
+            });
+          } catch (error) {
+            console.warn(`Failed to parse saved toggles for ${type}:`, error);
+          }
+        }
+      });
     }
 
     const getIconForCategory = (catalogId) => {
-      const iconMap = {
-        'tmdb-popular': 'fas fa-chart-line',
-        'tmdb-trending': 'fas fa-fire', 
-        'tmdb-top-rated': 'fas fa-trophy',
-        'tvdb-popular': 'fas fa-chart-line',
-        'tvdb-trending': 'fas fa-fire',
-        'tvdb-latest': 'fas fa-clock',
-        'kitsu-trending': 'fas fa-fire',
-        'kitsu-popular': 'fas fa-chart-line',
-        'jikan-top': 'fas fa-trophy'
-      };
-      return iconMap[catalogId] || 'fas fa-film';
+      // Use centralized icons from app config if available
+      return appConfig.value?.ui?.icons?.[catalogId] || 'fas fa-film';
     }
 
     const getTooltipForCatalog = (catalogId, type) => {
-      const tooltipMap = {
-        'tmdb-popular': `Most popular ${type}s from TMDB`,
-        'tmdb-trending': `Trending ${type}s from TMDB`,
-        'tmdb-top-rated': `Top rated ${type}s from TMDB`,
-        'tvdb-popular': `Popular ${type}s from TVDB`,
-        'tvdb-trending': `Trending ${type}s from TVDB`,
-        'tvdb-latest': `Latest ${type}s from TVDB`,
-        'kitsu-trending': `Trending anime from Kitsu`,
-        'kitsu-popular': `Popular anime from Kitsu`,
-        'jikan-top': `Top anime from MyAnimeList`
-      };
-      return tooltipMap[catalogId] || `Browse ${type}s in this category.`;
+      // Use centralized tooltips from app config if available
+      return appConfig.value?.ui?.tooltips?.[catalogId] || `Browse ${type}s in this category.`;
     }
 
     const getStorageKey = (type, key) => `tvdb-addon-${type}-${key}`
@@ -382,7 +392,7 @@ export default {
 
       const actions = {
         install: () => window.location.href = `stremio://${manifestHost}`,
-        web: () => window.open(`https://web.strem.io/#/?addon=${encodeURIComponent(manifestUrl)}`, '_blank'),
+        web: () => window.open(`https://web.stremio.com/#/addons?addon=${encodeURIComponent(manifestUrl)}`, '_blank'),
         copy: () => {
           navigator.clipboard.writeText(manifestUrl)
           showNotification('Manifest URL copied!')

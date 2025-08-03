@@ -62,6 +62,10 @@ logEnvVar('MONGODB_URI', process.env.MONGODB_URI);
 // CACHE_TYPE (optional, default memory)
 logEnvVar('CACHE_TYPE', process.env.CACHE_TYPE, { fallback: 'memory' });
 
+// Initialize catalog configuration and log status
+const catalogConfig = require('./src/config/catalogConfig');
+catalogConfig.logStatus(logger);
+
 CacheFactory.displayCacheInfo();
 const cacheService = CacheFactory.createCache(logger);
 
@@ -96,122 +100,12 @@ app.get('/api/languages', (req, res) => {
 });
 
 app.get('/api/catalog-defaults', (req, res) => {
-    const catalogDefaults = {
-        movieCatalogs: [
-            {
-                id: "tmdb-popular",
-                name: "TMDB Popular Movies",
-                description: "Popular movies from TMDB",
-                provider: "TMDB",
-                enabled: true,
-                featured: true
-            },
-            {
-                id: "tmdb-top-rated",
-                name: "TMDB Top Rated Movies",
-                description: "Top rated movies from TMDB",
-                provider: "TMDB",
-                enabled: true,
-                featured: false
-            },
-            {
-                id: "tmdb-trending",
-                name: "TMDB Trending Movies",
-                description: "Trending movies from TMDB",
-                provider: "TMDB",
-                enabled: true,
-                featured: true
-            }
-        ],
-        seriesCatalogs: [
-            {
-                id: "tvdb-popular",
-                name: "TVDB Popular Series",
-                description: "Popular TV series from TVDB",
-                provider: "TVDB",
-                enabled: true,
-                featured: true
-            },
-            {
-                id: "tvdb-latest",
-                name: "TVDB Latest Series",
-                description: "Latest TV series from TVDB",
-                provider: "TVDB",
-                enabled: true,
-                featured: false
-            },
-            {
-                id: "tvdb-trending",
-                name: "TVDB Trending Series",
-                description: "Trending TV series from TVDB",
-                provider: "TVDB",
-                enabled: true,
-                featured: true
-            }
-        ],
-        animeCatalogs: [
-            {
-                id: "kitsu-trending",
-                name: "Kitsu Trending Anime",
-                description: "Trending anime from Kitsu",
-                provider: "Kitsu",
-                enabled: true,
-                featured: true
-            },
-            {
-                id: "jikan-top",
-                name: "Jikan Top Anime",
-                description: "Top anime from Jikan (MyAnimeList)",
-                provider: "Jikan",
-                enabled: true,
-                featured: false
-            },
-            {
-                id: "kitsu-popular",
-                name: "Kitsu Popular Anime",
-                description: "Popular anime from Kitsu",
-                provider: "Kitsu",
-                enabled: true,
-                featured: true
-            }
-        ]
-    };
-    res.json(catalogDefaults);
+    const defaults = catalogConfig.getDefaultToggles();
+    res.json(defaults);
 });
 
 app.get('/api/app-config', (req, res) => {
-    const { getBaseUrl } = require('./src/utils/urlBuilder');
-    const baseUrl = getBaseUrl(req);
-    
-    const isTmdbConfigured = !!(process.env.TMDB_API_KEY && process.env.TMDB_API_KEY.trim() !== '');
-    const mode = isTmdbConfigured ? 'catalog' : 'search-only';
-    
-    const tvdbLogo = '<img src="https://thetvdb.com/images/logo.svg" alt="TVDB" style="display:inline;vertical-align:middle;width:2.2em;height:1em;margin:0 0.2em;filter:brightness(0) invert(1);" />';
-    const description = mode === 'catalog'
-        ? `Stremio addon that delivers curated content catalogs and ${tvdbLogo}search functionality with detailed metadata for movies, series, and anime.`
-        : `Stremio addon that delivers ${tvdbLogo}search functionality with detailed metadata for movies, series, and anime.`;
-
-    const appConfig = {
-        version: require('./package.json').version,
-        mode: mode,
-        isTmdbConfigured: isTmdbConfigured,
-        ui: {
-            title: mode === 'catalog' ? 'TVDB Catalog' : 'TVDB Search',
-            description,
-            features: mode === 'catalog'
-                ? ['Movies', 'TV Series', 'Anime', 'Catalog Browsing']
-                : ['Movies', 'TV Series', 'Anime']
-        },
-        manifestUrlTemplate: `${baseUrl}/{{LANG}}/manifest.json`,
-        supportedTypes: ['movie', 'series'],
-        features: {
-            catalogCustomization: isTmdbConfigured,
-            languageSelection: true,
-            metadataEnhancement: true,
-            caching: true,
-            advancedConfig: isTmdbConfigured
-        }
-    };
+    const appConfig = catalogConfig.getAppConfig(req);
     res.json(appConfig);
 });
 
