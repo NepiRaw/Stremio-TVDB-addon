@@ -77,9 +77,12 @@ services:
 ```
 
 > **Note:**
-> - The prebuilt image already contains all dependencies and starts the server automatically.
+> - The prebuilt image already contains all dependencies and the built frontend, and starts the server automatically.
+> - If you are building your own image (e.g., for development or custom changes), **make sure to build the frontend before starting the server**:
+>   1. Run `npm install` in the root.
+>   2. Run `npm run build` in the root (this will install and build the frontend automatically).
+>   3. Then start the backend server (the backend serves the built frontend from `frontend/dist`).
 > - If you want to use your own MongoDB instance for persistent caching, set `MONGODB_URI` in your `.env` file to point to your database (e.g., MongoDB Atlas or a local instance). This compose file does not run MongoDB by default.
-
 
 2. **Set up environment:**
 
@@ -88,6 +91,8 @@ git clone https://github.com/NepiRaw/Stremio-TVDB-addon.git
 cd Stremio-TVDB-addon
 cp .env.example .env
 # Edit .env with your API keys
+npm install
+npm run build
 docker-compose up -d
 ```
 
@@ -114,7 +119,10 @@ npm install
 cp .env.example .env
 # Edit .env with your configuration
 
-# Start the addon
+# Build the frontend and backend in one step
+npm run build
+
+# Start the addon (backend will serve the built frontend)
 npm start
 ```
 
@@ -128,12 +136,24 @@ npm start
 
 2. **Deploy to Vercel:**
    - Connect your GitHub repository to Vercel
-   - Configure environment variables in Vercel dashboard
+
+
+   - Configure environment variables in the Vercel dashboard (see below)
+
+   - Vercel will now auto-detect the correct install and build commands:
+     - **Install command:** `npm install` (auto-detected)
+     - **Build command:** `npm run build` (auto-detected, runs the root build script)
    - Deploy
 
 3. **Environment Variables in Vercel:**
    - Set all required variables from the table below
    - Use MongoDB Atlas for database (free tier available)
+
+
+> **Note:**
+> - The backend Express server serves the built frontend from `frontend/dist`.
+> - The install command runs before the build command, so you do not need to run `npm install` again in the build command.
+> - If you use a custom Vercel configuration, ensure the build command includes building the frontend as shown above.
 
 ---
 

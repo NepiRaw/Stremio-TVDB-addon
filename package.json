@@ -7,7 +7,7 @@
     "start": "cross-env NODE_ENV=production node server.js",
     "start:dev": "cross-env NODE_ENV=development nodemon server.js",
     "dev": "cross-env NODE_ENV=development nodemon server.js",
-    "build": "cd frontend && npm run build",
+    "build": "cd frontend && npm install && npm run build",
     "test": "cross-env NODE_ENV=test jest",
     "test:watch": "cross-env NODE_ENV=test jest --watch",
     "docker:build": "docker build -t stremio-tvdb-addon .",
