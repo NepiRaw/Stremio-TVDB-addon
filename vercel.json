@@ -1,19 +1,44 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "outputDirectory": "frontend/dist",
   "version": 2,
-  "builds": [
+  
+  "rewrites": [
     {
-      "src": "server.js",
-      "use": "@vercel/node"
+      "source": "/api/(.*)",
+      "destination": "/server.js"
     },
     {
-      "src": "frontend/package.json",
-      "use": "@vercel/static-build",
-      "config": { "distDir": "frontend/dist" }
+      "source": "/manifest.json",
+      "destination": "/server.js"
+    },
+    {
+      "source": "/health",
+      "destination": "/server.js"
+    },
+    {
+      "source": "/admin/(.*)",
+      "destination": "/server.js"
+    },
+    {
+      "source": "/:language(\\w+)/manifest.json",
+      "destination": "/server.js"
+    },
+    {
+      "source": "/:language(\\w+)/catalog/(.*)",
+      "destination": "/server.js"
+    },
+    {
+      "source": "/:language(\\w+)/meta/(.*)",
+      "destination": "/server.js"
+    },
+    {
+      "source": "/catalog/(.*)",
+      "destination": "/server.js"
+    },
+    {
+      "source": "/meta/(.*)",
+      "destination": "/server.js"
     }
-  ],
-  "routes": [
-    { "src": "/api/(.*)", "dest": "/api/$1" },
-    { "src": "/(.*)", "dest": "/frontend/$1" }
   ]
 }
