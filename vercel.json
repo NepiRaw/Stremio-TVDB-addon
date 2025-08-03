@@ -2,8 +2,17 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "outputDirectory": "frontend/dist",
   "version": 2,
-  
+  "functions": {
+    "server.js": {
+      "memory": 1024,
+      "maxDuration": 30
+    }
+  },
   "rewrites": [
+    {
+      "source": "/",
+      "destination": "/server.js"
+    },
     {
       "source": "/api/(.*)",
       "destination": "/server.js"
