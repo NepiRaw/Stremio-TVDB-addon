@@ -86,8 +86,158 @@ app.use(cors());
 app.use(express.json());
 app.use(requestLogger);
 
-// Serve static files (excluding public directory which contains templates)
 app.use('/static', express.static(path.join(__dirname, 'src', 'static')));
+app.use('/assets', express.static(path.join(__dirname, 'public', 'assets')));
+
+// API routes for Vue frontend
+app.get('/api/languages', (req, res) => {
+    const { getLanguageOptions } = require('./src/utils/languageMap');
+    res.json(getLanguageOptions());
+});
+
+app.get('/api/catalog-defaults', (req, res) => {
+    const catalogDefaults = {
+        movieCatalogs: [
+            {
+                id: "tmdb-popular",
+                name: "TMDB Popular Movies",
+                description: "Popular movies from TMDB",
+                provider: "TMDB",
+                enabled: true,
+                featured: true
+            },
+            {
+                id: "tmdb-top-rated",
+                name: "TMDB Top Rated Movies",
+                description: "Top rated movies from TMDB",
+                provider: "TMDB",
+                enabled: true,
+                featured: false
+            },
+            {
+                id: "tmdb-trending",
+                name: "TMDB Trending Movies",
+                description: "Trending movies from TMDB",
+                provider: "TMDB",
+                enabled: true,
+                featured: true
+            }
+        ],
+        seriesCatalogs: [
+            {
+                id: "tvdb-popular",
+                name: "TVDB Popular Series",
+                description: "Popular TV series from TVDB",
+                provider: "TVDB",
+                enabled: true,
+                featured: true
+            },
+            {
+                id: "tvdb-latest",
+                name: "TVDB Latest Series",
+                description: "Latest TV series from TVDB",
+                provider: "TVDB",
+                enabled: true,
+                featured: false
+            },
+            {
+                id: "tvdb-trending",
+                name: "TVDB Trending Series",
+                description: "Trending TV series from TVDB",
+                provider: "TVDB",
+                enabled: true,
+                featured: true
+            }
+        ],
+        animeCatalogs: [
+            {
+                id: "kitsu-trending",
+                name: "Kitsu Trending Anime",
+                description: "Trending anime from Kitsu",
+                provider: "Kitsu",
+                enabled: true,
+                featured: true
+            },
+            {
+                id: "jikan-top",
+                name: "Jikan Top Anime",
+                description: "Top anime from Jikan (MyAnimeList)",
+                provider: "Jikan",
+                enabled: true,
+                featured: false
+            },
+            {
+                id: "kitsu-popular",
+                name: "Kitsu Popular Anime",
+                description: "Popular anime from Kitsu",
+                provider: "Kitsu",
+                enabled: true,
+                featured: true
+            }
+        ]
+    };
+    res.json(catalogDefaults);
+});
+
+app.get('/api/app-config', (req, res) => {
+    const { getBaseUrl } = require('./src/utils/urlBuilder');
+    const baseUrl = getBaseUrl(req);
+    
+    const isTmdbConfigured = !!(process.env.TMDB_API_KEY && process.env.TMDB_API_KEY.trim() !== '');
+    const mode = isTmdbConfigured ? 'catalog' : 'search-only';
+    
+    const tvdbLogo = '<img src="https://thetvdb.com/images/logo.svg" alt="TVDB" style="display:inline;vertical-align:middle;width:2.2em;height:1em;margin:0 0.2em;filter:brightness(0) invert(1);" />';
+    const description = mode === 'catalog'
+        ? `Stremio addon that delivers curated content catalogs and ${tvdbLogo}search functionality with detailed metadata for movies, series, and anime.`
+        : `Stremio addon that delivers ${tvdbLogo}search functionality with detailed metadata for movies, series, and anime.`;
+
+    const appConfig = {
+        version: require('./package.json').version,
+        mode: mode,
+        isTmdbConfigured: isTmdbConfigured,
+        ui: {
+            title: mode === 'catalog' ? 'TVDB Catalog' : 'TVDB Search',
+            description,
+            features: mode === 'catalog'
+                ? ['Movies', 'TV Series', 'Anime', 'Catalog Browsing']
+                : ['Movies', 'TV Series', 'Anime']
+        },
+        manifestUrlTemplate: `${baseUrl}/{{LANG}}/manifest.json`,
+        supportedTypes: ['movie', 'series'],
+        features: {
+            catalogCustomization: isTmdbConfigured,
+            languageSelection: true,
+            metadataEnhancement: true,
+            caching: true,
+            advancedConfig: isTmdbConfigured
+        }
+    };
+    res.json(appConfig);
+});
+
+app.get('/api/config', (req, res) => {
+    const isTmdbConfigured = !!(process.env.TMDB_API_KEY && process.env.TMDB_API_KEY.trim() !== '');
+    
+    const userConfig = {
+        language: req.query.language || 'eng',
+        isTmdbConfigured: isTmdbConfigured,
+        enabledCatalogs: {
+            movies: ['tmdb-popular', 'tmdb-trending'],
+            series: ['tvdb-popular', 'tvdb-trending'],
+            anime: ['kitsu-trending', 'kitsu-popular']
+        },
+        preferences: {
+            showAdultContent: false,
+            preferredRegion: 'US',
+            maxResults: 20
+        }
+    };
+    res.json(userConfig);
+});
+
+app.post('/api/config', express.json(), (req, res) => {
+    res.json({ success: true, message: 'Configuration saved successfully' });
+});
 
 // Routes
 app.get('/', (req, res) => installationPageHandler(req, res, logger));
@@ -103,11 +253,6 @@ app.get('/manifest.json', (req, res) => manifestHandler(req, res, logger));
 app.get('/catalog/:type/:id/:extra?.json', (req, res) => catalogHandler(req, res, tvdbService, logger));
 app.get('/catalog/:type/:id.json', (req, res) => catalogHandler(req, res, tvdbService, logger));
 app.get('/meta/:type/:id.json', (req, res) => metaHandler(req, res, tvdbService, logger));
-
-app.get('/api/languages', (req, res) => {
-    const { getLanguageOptions } = require('./src/utils/languageMap');
-    res.json(getLanguageOptions());
-});
 
 app.get('/health', async (req, res) => {
     try {

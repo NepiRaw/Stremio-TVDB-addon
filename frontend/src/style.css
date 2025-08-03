@@ -1,0 +1,355 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  background: linear-gradient(135deg, #1a2526 0%, #0d1a1b 100%);
+}
+
+#app {
+  font-family: 'Roboto', sans-serif;
+  color: #E0E0E0;
+}
+
+.select-wrapper {
+  position: relative;
+  width: 100%;
+}
+
+.select-wrapper::after {
+  content: '\f078';
+  font-family: 'Font Awesome 6 Free';
+  font-weight: 900;
+  color: #E0E0E0;
+  position: absolute;
+  right: 16px;
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
+  transition: color 0.3s ease;
+  font-size: 0.9rem;
+}
+
+.language-select {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  background: linear-gradient(180deg, #323D3E 0%, #2A3536 100%);
+  border: 2px solid #555;
+  transition: all 0.3s ease;
+  padding: 14px 40px 14px 16px;
+  border-radius: 12px;
+  font-size: 15px;
+  color: #E0E0E0;
+}
+.language-select:focus {
+  border-color: #00A86B;
+  box-shadow: 0 0 8px rgba(0, 168, 107, 0.3);
+}
+
+.select-wrapper:hover::after, .language-select:hover {
+  color: #00A86B;
+  border-color: #00A86B;
+}
+
+.language-select option {
+  background: #222D2E;
+  color: #E0E0E0;
+}
+
+.info-tooltip {
+    color: #00A86B;
+    cursor: help;
+    font-size: 14px;
+    font-weight: normal;
+    position: relative;
+}
+
+.info-tooltip:hover::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    bottom: 150%;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #222D2E;
+    color: #E0E0E0;
+    padding: 10px 15px;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    white-space: normal;
+    width: 220px;
+    z-index: 10;
+    border: 1px solid rgba(0, 168, 107, 0.3);
+    text-align: center;
+}
+
+.info-tooltip:hover::before {
+    content: '';
+    position: absolute;
+    bottom: calc(150% - 12px);
+    left: 50%;
+    transform: translateX(-50%) rotate(45deg);
+    background: #222D2E;
+    border: 1px solid rgba(0, 168, 107, 0.3);
+    border-top: none;
+    border-left: none;
+    width: 12px;
+    height: 12px;
+    z-index: 11;
+}
+
+
+.catalog-tabs {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 20px;
+  border-bottom: 2px solid rgba(0, 168, 107, 0.2);
+}
+
+.catalog-tab {
+  padding: 10px 20px;
+  cursor: pointer;
+  background: transparent;
+  border: none;
+  color: #8EC7B4;
+  font-size: 1rem;
+  font-weight: 500;
+  border-bottom: 3px solid transparent;
+  transition: all 0.3s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.catalog-tab:hover {
+  color: #fff;
+  background: rgba(0, 168, 107, 0.1);
+}
+
+.catalog-tab.active {
+  color: #00A86B;
+  font-weight: 600;
+  border-bottom-color: #00A86B;
+}
+
+@media (max-width: 600px) {
+  .catalog-tabs {
+    flex-wrap: wrap;
+  }
+  
+  .install-container {
+    flex-direction: column;
+    border-radius: 12px;
+    width: 100%;
+  }
+
+  .install-btn {
+    padding: 14px;
+    justify-content: center;
+    border-radius: 12px 12px 0 0;
+    font-size: 1.1rem;
+  }
+
+  .install-dropdown-btn {
+    padding: 12px;
+    border-left: none;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 0 0 12px 12px;
+  }
+
+  .dropdown-menu {
+    width: 100%;
+    right: 0;
+  }
+}
+
+.install-container {
+  display: inline-flex;
+  position: relative;
+  margin-top: 30px;
+  background: linear-gradient(45deg, #1A3536, #2A4A4B);
+  border-radius: 50px;
+  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+}
+
+.install-btn {
+  background: transparent;
+  color: #E0E0E0;
+  border: none;
+  padding: 16px 45px;
+  font-size: 1.2rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  position: relative;
+  z-index: 1;
+  border-radius: 50px 0 0 50px;
+}
+
+.install-btn:disabled {
+    background: #00A86B;
+    color: white;
+    pointer-events: none;
+}
+
+.install-btn:hover {
+  background: rgba(0, 168, 107, 0.2);
+}
+
+.install-dropdown-btn {
+  background: rgba(0, 0, 0, 0.2);
+  color: #E0E0E0;
+  border: none;
+  padding: 0 20px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  border-left: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  align-items: center;
+  border-radius: 0 50px 50px 0;
+}
+
+.install-dropdown-btn:hover {
+  background: rgba(42, 74, 75, 0.3);
+}
+
+.dropdown-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  background: #222D2E;
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  width: 240px;
+  z-index: 10;
+  margin-top: 5px;
+  border: 1px solid rgba(0, 168, 107, 0.1);
+}
+
+.dropdown-menu::before {
+  content: '';
+  position: absolute;
+  top: -10px;
+  right: 20px;
+  width: 0;
+  height: 0;
+  border-left: 10px solid transparent;
+  border-right: 10px solid transparent;
+  border-bottom: 10px solid #222D2E;
+}
+
+.dropdown-menu.dropdown-up {
+  top: auto;
+  bottom: 100%;
+  margin-top: 0;
+  margin-bottom: 5px;
+}
+
+.dropdown-menu.dropdown-up::before {
+  top: auto;
+  bottom: -10px;
+  border-bottom: none;
+  border-top: 10px solid #222D2E;
+}
+
+.dropdown-item {
+  padding: 15px 20px;
+  text-align: left;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: #E0E0E0;
+  text-decoration: none;
+  transition: all 0.2s ease;
+}
+
+.dropdown-item:not(:last-child) {
+  border-bottom: 1px solid rgba(0, 168, 107, 0.15);
+}
+
+.dropdown-item:hover {
+  background: rgba(0, 168, 107, 0.1);
+  padding-left: 25px;
+  color: #00A86B;
+}
+
+.dropdown-item:first-child {
+  border-radius: 12px 12px 0 0;
+}
+
+.dropdown-item:last-child {
+  border-radius: 0 0 12px 12px;
+}
+
+.badge {
+  background: rgba(26, 53, 54, 0.6);
+  color: #E0E0E0;
+  padding: 8px 16px;
+  border-radius: 20px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  border: 1px solid rgba(0, 168, 107, 0.1);
+  transition: background 0.2s ease;
+}
+
+.badge:hover {
+  background: rgba(42, 74, 75, 0.8);
+  cursor: default;
+}
+
+.notification {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background: #00A86B;
+    color: white;
+    padding: 15px 25px;
+    border-radius: 12px;
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    z-index: 1000;
+    transform: translateX(150%);
+    transition: transform 0.3s ease;
+}
+
+.notification.show {
+    transform: translateX(0);
+}
+
+.github-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  background: #24292e;
+  color: #fff;
+  padding: 12px 24px;
+  border-radius: 25px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  text-decoration: none;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.github-badge:hover {
+  background: #2f363d;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  color: #fff;
+}
+
+.github-badge i {
+  font-size: 1.2rem;
+}
+
+@media (max-width: 480px) {
+  .github-badge {
+    font-size: 0.8rem;
+    padding: 10px 20px;
+  }
+}

@@ -9,9 +9,15 @@ async function installationPageHandler(req, res, logger = null) {
         let html = fs.readFileSync(htmlPath, 'utf8');
         const { getBaseUrl } = require('../utils/urlBuilder');
         const baseUrl = getBaseUrl(req);
+        
+        const isTmdbConfigured = !!(process.env.TMDB_API_KEY && process.env.TMDB_API_KEY.trim() !== '');
+        const title = isTmdbConfigured ? 'TVDB Catalog' : 'TVDB Search';
         const manifestUrlTemplate = `${baseUrl}/{{LANG}}/manifest.json`;
+        
+        html = html.replace('{{TITLE}}', title);
         html = html.replace('{{VERSION}}', packageJson.version);
         html = html.replace('{{MANIFEST_URL}}', manifestUrlTemplate);
+        
         res.setHeader('Content-Type', 'text/html');
         res.send(html);
     } catch (error) {
