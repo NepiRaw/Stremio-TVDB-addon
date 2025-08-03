@@ -4,13 +4,10 @@
   "functions": {
     "api/index.js": {
       "runtime": "nodejs18.x"
-    },
-    "server.js": {
-      "runtime": "nodejs18.x"
     }
   },
-  "rewrites": [
-    { "source": "/api/(.*)", "destination": "/api/$1" },
-    { "source": "/(.*)", "destination": "/frontend/$1" }
+  "routes": [
+    { "src": "/api/(.*)", "dest": "/api/$1" },
+    { "src": "/(.*)", "dest": "/frontend/$1" }
   ]
 }
