@@ -6,7 +6,7 @@ const catalogConfig = require('../config/catalogConfig');
 
 async function installationPageHandler(req, res, logger = null) {
     try {
-        const htmlPath = path.join(__dirname, '../../public/index.html');
+        const htmlPath = path.join(__dirname, '../../frontend/public/index.html');
         let html = fs.readFileSync(htmlPath, 'utf8');
         const { getBaseUrl } = require('../utils/urlBuilder');
         const baseUrl = getBaseUrl(req);
