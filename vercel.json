@@ -3,7 +3,7 @@
   "outputDirectory": "frontend/dist",
   "version": 2,
   "functions": {
-    "server.js": {
+    "api/index.js": {
       "memory": 1024,
       "maxDuration": 30
     }
@@ -11,43 +11,43 @@
   "rewrites": [
     {
       "source": "/",
-      "destination": "/server.js"
+      "destination": "/api"
     },
     {
       "source": "/api/(.*)",
-      "destination": "/server.js"
+      "destination": "/api"
     },
     {
       "source": "/manifest.json",
-      "destination": "/server.js"
+      "destination": "/api"
     },
     {
       "source": "/health",
-      "destination": "/server.js"
+      "destination": "/api"
     },
     {
       "source": "/admin/(.*)",
-      "destination": "/server.js"
+      "destination": "/api"
     },
     {
       "source": "/:language(\\w+)/manifest.json",
-      "destination": "/server.js"
+      "destination": "/api"
     },
     {
       "source": "/:language(\\w+)/catalog/(.*)",
-      "destination": "/server.js"
+      "destination": "/api"
     },
     {
       "source": "/:language(\\w+)/meta/(.*)",
-      "destination": "/server.js"
+      "destination": "/api"
     },
     {
       "source": "/catalog/(.*)",
-      "destination": "/server.js"
+      "destination": "/api"
     },
     {
       "source": "/meta/(.*)",
-      "destination": "/server.js"
+      "destination": "/api"
     }
   ]
 }
