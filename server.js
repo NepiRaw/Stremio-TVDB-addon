@@ -92,8 +92,8 @@ app.use(requestLogger);
 
 
 app.use('/static', express.static(path.join(__dirname, 'src', 'static')));
-app.use('/assets', express.static(path.join(__dirname, 'frontend', 'public', 'assets')));
-app.use(express.static(path.join(__dirname, 'frontend', 'public')));
+app.use('/assets', express.static(path.join(__dirname, 'frontend', 'dist', 'assets')));
+app.use(express.static(path.join(__dirname, 'frontend', 'dist')));
 
 // API routes for Vue frontend
 app.get('/api/languages', (req, res) => {

@@ -85,6 +85,7 @@ typings/
 # Nuxt.js build / generate output
 .nuxt
 dist
+frontend/public
 
 # Gatsby files
 .cache/
@@ -126,6 +127,3 @@ Thumbs.db
 
 # Test environment
 tests
-
-# public
-frontend/public/assets
