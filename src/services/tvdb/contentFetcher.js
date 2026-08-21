@@ -3,6 +3,7 @@
  * Unified content fetching for movies and series with shared logic
  */
 const { fetchAllEpisodePages } = require('../../utils/episodePager');
+const { isTransportError } = require('../../utils/errorHandler');
 
 class ContentFetcher {
     constructor(apiClient, cacheService, logger) {
@@ -28,14 +29,21 @@ class ContentFetcher {
             const basic = basicResult.status === 'fulfilled' ? basicResult.value : null;
             const extended = extendedResult.status === 'fulfilled' ? extendedResult.value : null;
             const result = extended?.data || basic?.data || null;
-            await this.cacheService.setMetadata(contentType, numericId, null, result);
+            const unanswered = [basicResult, extendedResult]
+                .some(outcome => outcome.status === 'rejected' && isTransportError(outcome.reason));
+
+            if (result || !unanswered) {
+                await this.cacheService.setMetadata(contentType, numericId, null, result);
+            }
             if (result) {
                 this.logger?.debug?.(`Cached metadata for ${contentType} ${numericId}`);
             }
             return result;
         } catch (error) {
             this.logger?.error?.(`${contentType} details error for ID ${contentId}:`, error.message);
-            await this.cacheService.setMetadata(contentType, this.extractNumericId(contentId), null, null);
+            if (!isTransportError(error)) {
+                await this.cacheService.setMetadata(contentType, this.extractNumericId(contentId), null, null);
+            }
             return null;
         }
     }
@@ -73,7 +81,9 @@ class ContentFetcher {
             return seasons;
         } catch (error) {
             this.logger?.error?.(`Series seasons error for ID ${seriesId}:`, error.message);
-            await this.cacheService.setSeasonData(seriesId, null, []);
+            if (!isTransportError(error)) {
+                await this.cacheService.setSeasonData(seriesId, null, []);
+            }
             return [];
         }
     }
@@ -94,7 +104,9 @@ class ContentFetcher {
             return allEpisodes;
         } catch (error) {
             this.logger?.error?.(`Series episodes error for ID ${seriesId}:`, error.message);
-            await this.cacheService.setSeasonData(seriesId, `episodes:${seasonType}`, []);
+            if (!isTransportError(error)) {
+                await this.cacheService.setSeasonData(seriesId, `episodes:${seasonType}`, []);
+            }
             return [];
         }
     }

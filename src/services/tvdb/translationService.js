@@ -5,6 +5,7 @@
 
 const { mapToTvdbLanguage, selectPreferredTranslation } = require('../../utils/languageMap');
 const { fetchAllEpisodePages } = require('../../utils/episodePager');
+const { isTransportError } = require('../../utils/errorHandler');
 
 class TranslationService {
     constructor(apiClient, cacheService, logger) {
@@ -47,7 +48,9 @@ class TranslationService {
             return translationData;
         } catch (error) {
             this.logger.error(`Translation fetch error for ${entityType} ${entityId} in ${tvdbLanguage}:`, error.message);
-            await this.cacheService.setTranslation(entityType, entityId, tvdbLanguage, 'full', null);
+            if (!isTransportError(error)) {
+                await this.cacheService.setTranslation(entityType, entityId, tvdbLanguage, 'full', null);
+            }
             return null;
         }
     }
@@ -60,19 +63,21 @@ class TranslationService {
         return selectPreferredTranslation(translationsObj, userLanguage);
     }
 
+    // Reports whether the request went unanswered, so the caller can skip caching an unknown result.
     async _fetchAllEpisodeTranslations(seriesId, language) {
         try {
             const allEpisodes = await fetchAllEpisodePages(this.apiClient, `/series/${seriesId}/episodes/default/${language}`);
             this.logger.debug(`... fetched ${allEpisodes.length} episode translations for ${language} for series ${seriesId}`);
-            return allEpisodes.length > 0 ? allEpisodes : null;
+            return { episodes: allEpisodes.length > 0 ? allEpisodes : null, unanswered: false };
         } catch (error) {
             this.logger.warn(`Failed to fetch episode translations for series ${seriesId} (${language}):`, error.message);
-            return null;
+            return { episodes: null, unanswered: isTransportError(error) };
         }
     }
 
     async getBulkEpisodeTranslations(seriesId, tvdbLanguage) {
         const translations = { primary: null, fallback: null };
+        let unanswered = false;
         
         const cachedTranslations = await this.cacheService.getTranslation('series', seriesId, tvdbLanguage, 'bulk-episodes');
         if (cachedTranslations) {
@@ -84,14 +89,19 @@ class TranslationService {
             this.logger.info(`🌍 Fetching all pages of episode translations for series ${seriesId} (${tvdbLanguage})...`);
 
             if (tvdbLanguage === 'eng') {
-                translations.primary = await this._fetchAllEpisodeTranslations(seriesId, 'eng');
-                translations.fallback = translations.primary;
+                const english = await this._fetchAllEpisodeTranslations(seriesId, 'eng');
+                translations.primary = english.episodes;
+                translations.fallback = english.episodes;
+                unanswered = english.unanswered;
             } else {
                 this.logger.info(`🌍 Fetching English fallback episode translations for series ${seriesId}...`);
-                [translations.primary, translations.fallback] = await Promise.all([
+                const [primary, fallback] = await Promise.all([
                     this._fetchAllEpisodeTranslations(seriesId, tvdbLanguage),
                     this._fetchAllEpisodeTranslations(seriesId, 'eng')
                 ]);
+                translations.primary = primary.episodes;
+                translations.fallback = fallback.episodes;
+                unanswered = primary.unanswered || fallback.unanswered;
             }
 
             if (!translations.primary && tvdbLanguage !== 'eng' && translations.fallback) {
@@ -102,7 +112,9 @@ class TranslationService {
             this.logger.warn(`⚠️ An unexpected error occurred during bulk episode translation fetching: ${error.message}`);
         }
         
-        await this.cacheService.setTranslation('series', seriesId, tvdbLanguage, 'bulk-episodes', translations);
+        if (!unanswered) {
+            await this.cacheService.setTranslation('series', seriesId, tvdbLanguage, 'bulk-episodes', translations);
+        }
 
         return translations;
     }
