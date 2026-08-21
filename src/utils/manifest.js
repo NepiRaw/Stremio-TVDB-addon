@@ -32,7 +32,7 @@ function getManifest(tvdbLanguage = DEFAULT_LANGUAGE, req) {
         
         contactEmail: 'https://github.com/NepiRaw/Stremio-TVDB-addon',
         logo: 'https://thetvdb.com/images/logo.png',
-        background: 'https://thetvdb.com/images/background.jpg'
+        background: 'https://www.thetvdb.com/images/logo.svg'
     };
     
     manifest.catalogs = catalogConfig.getManifestCatalogs();

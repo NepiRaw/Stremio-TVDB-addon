@@ -179,10 +179,9 @@ class MetadataTransformer {
 
         this.addCastWithGenreFiltering(meta, item);
 
-        if (item.originalCountry) {
-            meta.country = [item.originalCountry];
-        } else if (item.country) {
-            meta.country = [item.country];
+        const country = item.originalCountry || item.country;
+        if (country) {
+            meta.country = Array.isArray(country) ? country.filter(Boolean).join(', ') : String(country);
         }
 
         if (item.originalLanguage) {

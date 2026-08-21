@@ -27,14 +27,15 @@ class TVDBService {
             throw new Error('TVDB_API_KEY environment variable is required');
         }
 
-        this.contentFetcher = new ContentFetcher(this, this.cacheService);
+        this.contentFetcher = new ContentFetcher(this, this.cacheService, this.logger);
         this.translationService = new TranslationService(this, this.cacheService, this.logger);
-        this.artworkHandler = new ArtworkHandler(this, this.cacheService);
-        this.catalogTransformer = new CatalogTransformer(this.contentFetcher, this.translationService, this.artworkHandler, this.cacheService);
+        this.artworkHandler = new ArtworkHandler(this, this.cacheService, this.logger);
+        this.catalogTransformer = new CatalogTransformer(this.contentFetcher, this.translationService, this.artworkHandler, this.cacheService, this.logger);
         this.metadataTransformer = new MetadataTransformer(
             this.contentFetcher, 
             this.translationService, 
-            this.artworkHandler
+            this.artworkHandler,
+            this.logger
         );
         
         this.updatesService = new UpdatesService(this, this.cacheService, this.logger);
@@ -212,6 +213,10 @@ class TVDBService {
         return this.contentFetcher.extractImdbId(item);
     }
 
+    async getTvdbIdFromImdbId(imdbId, contentType) {
+        return this.contentFetcher.getTvdbIdFromImdbId(imdbId, contentType);
+    }
+
     async getArtwork(entityType, entityId, language = 'eng') {
         return this.artworkHandler.getArtwork(entityType, entityId, language);
     }
@@ -229,17 +234,12 @@ class TVDBService {
     }
 
     async transformSearchResults(results, type, userLanguage = null) {
-        const catalogResults = await this.catalogTransformer.transformSearchResults(results, type, userLanguage);
-        
-        return catalogResults;
-    }
-
-    transformSearchItemToStremioMeta(item, userLanguage = null) {
-        return this.catalogTransformer.transformSearchItemToStremioMeta(item, userLanguage);
+        const metas = this.catalogTransformer.transformSearchResults(results, type, userLanguage);
+        return this.catalogTransformer.upgradePosters(metas, type, userLanguage);
     }
 
     transformToStremioMeta(item, userLanguage = null) {
-        return this.catalogTransformer.transformSearchItemToStremioMeta(item, userLanguage);
+        return this.catalogTransformer.buildMetaFromSearchItem(item, userLanguage);
     }
 
     async transformDetailedToStremioMeta(item, type, seasonsData = null, tvdbLanguage = 'eng') {
@@ -269,7 +269,7 @@ class TVDBService {
                 const ratingData = await this.ratingService.getImdbRating(meta.imdb_id, type);
                 if (ratingData && !ratingData.notFound) {
                     if (ratingData.imdb_rating) {
-                        meta.imdbRating = ratingData.imdb_rating;
+                        meta.imdbRating = String(ratingData.imdb_rating);
                     }
                     if (!meta.votes && ratingData.imdb_votes) {
                         meta.votes = ratingData.imdb_votes;

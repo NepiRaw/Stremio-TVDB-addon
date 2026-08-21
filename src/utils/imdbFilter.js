@@ -11,101 +11,68 @@ const { logger } = require('./logger');
  */
 
 
+// TVDB serves a "missing artwork" placeholder URL
+const PLACEHOLDER_IMAGE = /\/images\/missing\//;
+
+function isUsableImage(url) {
+    return typeof url === 'string' && url.trim().length > 0 && !PLACEHOLDER_IMAGE.test(url);
+}
+
 function hasValidPoster(item) {
     if (!item) return false;
-    
-    if (item.poster && typeof item.poster === 'string' && item.poster.trim()) {
+
+    // image_url is the /search shape; the others are the detail/extended shapes.
+    const directSources = [
+        item.poster, item.image, item.image_url,
+        item.posterUrl, item.thumbnailUrl, item.imageUrl
+    ];
+
+    if (directSources.some(isUsableImage)) {
         return true;
     }
-    
-    if (item.image && typeof item.image === 'string' && item.image.trim()) {
-        return true;
+
+    if (Array.isArray(item.artworks)) {
+        // Type 2 = series poster, Type 14 = movie poster, Type 15 = movie cover
+        return item.artworks.some(artwork =>
+            [2, 14, 15].includes(artwork.type) && isUsableImage(artwork.image)
+        );
     }
-    
-    if (item.artworks && Array.isArray(item.artworks)) {
-        const posterArtwork = item.artworks.find(artwork => {
-            // Type 2 = series poster, Type 14 = movie poster, Type 15 = movie cover
-            const posterTypes = [2, 14, 15];
-            return posterTypes.includes(artwork.type) && 
-                   artwork.image && 
-                   typeof artwork.image === 'string' && 
-                   artwork.image.trim();
-        });
-        
-        if (posterArtwork) {
-            return true;
-        }
-    }
-    
-    if (item.posterUrl && typeof item.posterUrl === 'string' && item.posterUrl.trim()) {
-        return true;
-    }
-    
-    if (item.thumbnailUrl && typeof item.thumbnailUrl === 'string' && item.thumbnailUrl.trim()) {
-        return true;
-    }
-    
-    if (item.imageUrl && typeof item.imageUrl === 'string' && item.imageUrl.trim()) {
-        return true;
-    }
-    
+
     return false;
 }
 
-function hasValidImdbId(item) {
-    if (!item) {
-        return false;
-    }
-    
-    if (item.remoteIds && Array.isArray(item.remoteIds)) {
-        const imdbRemote = item.remoteIds.find(remote => 
-            remote.sourceName?.toLowerCase() === 'imdb' || 
-            remote.type === 2 || // IMDB type in TVDB
-            (remote.id && remote.id.toString().startsWith('tt'))
-        );
-        
-        if (imdbRemote && imdbRemote.id) {
-            const id = imdbRemote.id.toString();
-            const isValid = id.startsWith('tt') && id.length >= 9; // tt + 7 digits minimum
-            return isValid;
-        }
-    }
-    
-    if (item.imdb && typeof item.imdb === 'string') {
-        const id = item.imdb;
-        if (id.startsWith('tt')) {
-            const isValid = id.length >= 9; // tt + 7 digits minimum
-            return isValid;
-        } else if (/^\d{7,}$/.test(id)) {
-            return true; // Numeric IMDB ID without tt prefix
-        }
-    }
-    
-    return false;
+// Detail/extended endpoints return remoteIds; /search returns the same shape as remote_ids.
+function getRemoteIds(item) {
+    return item.remoteIds || item.remote_ids || null;
 }
 
 function extractImdbId(item) {
     if (!item) return null;
-    
-    if (item.remoteIds && Array.isArray(item.remoteIds)) {
-        const imdbRemote = item.remoteIds.find(remote => 
-            remote.sourceName?.toLowerCase() === 'imdb' || 
-            remote.type === 2 ||
+
+    const remoteIds = getRemoteIds(item);
+    if (Array.isArray(remoteIds)) {
+        const imdbRemote = remoteIds.find(remote =>
+            remote.sourceName?.toLowerCase() === 'imdb' ||
+            remote.type === 2 || // IMDB type in TVDB
             (remote.id && remote.id.toString().startsWith('tt'))
         );
-        
+
         if (imdbRemote && imdbRemote.id) {
             const id = imdbRemote.id.toString();
             return id.startsWith('tt') ? id : `tt${id}`;
         }
     }
-    
+
     if (item.imdb && typeof item.imdb === 'string') {
-        const id = item.imdb;
-        return id.startsWith('tt') ? id : `tt${id}`;
+        return item.imdb.startsWith('tt') ? item.imdb : `tt${item.imdb}`;
     }
-    
+
     return null;
+}
+
+function hasValidImdbId(item) {
+    const imdbId = extractImdbId(item);
+    return !!(imdbId && imdbId.length >= 9); // tt + 7 digits minimum
 }
 
 function hasValidQualityMetadata(item) {
@@ -189,6 +156,7 @@ module.exports = {
     hasValidImdbId,
     hasValidPoster,
     hasValidQualityMetadata,
+    isUsableImage,
     extractImdbId,
     filterByImdbRequirement,
     filterDetailedByImdbRequirement,

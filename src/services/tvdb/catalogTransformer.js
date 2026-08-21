@@ -1,9 +1,10 @@
 /**
  * TVDB Catalog Transformer
- * Transforms search results to Stremio catalog format with IMDB filtering
+ * Builds Stremio search rows from the /search payload alone, with IMDB filtering.
+ * Posters are then upgraded to a language-specific one, one cached call per row.
  */
 
-const { validateImdbRequirement } = require('../../utils/imdbFilter');
+const { hasValidImdbId, hasValidPoster, isUsableImage, extractImdbId } = require('../../utils/imdbFilter');
 
 class CatalogTransformer {
     constructor(contentFetcher, translationService, artworkHandler, cacheService, logger) {
@@ -14,231 +15,102 @@ class CatalogTransformer {
         this.logger = logger;
     }
 
-    async transformSearchResults(results, type, userLanguage = null) {
-        const basicFiltered = results.filter(item => {
-            if (type === 'movie' && item.type !== 'movie') return false;
-            if (type === 'series' && item.type !== 'series') return false;
-            return item.id && item.name;
-        });
+    transformSearchResults(results, type, userLanguage = null) {
+        if (!Array.isArray(results)) return [];
 
-        if (basicFiltered.length === 0) {
-            return [];
-        }
+        const metas = results
+            .filter(item => {
+                if (type === 'movie' && item.type !== 'movie') return false;
+                if (type === 'series' && item.type !== 'series') return false;
+                return Boolean(item.id && item.name);
+            })
+            .filter(item => hasValidImdbId(item) && hasValidPoster(item))
+            .map(item => this.buildMetaFromSearchItem(item, userLanguage));
 
-        const transformPromises = basicFiltered.map(item => 
-            this.transformSearchItemToStremioMeta(item, userLanguage)
-        );
-        
-        const transformedResults = (await Promise.allSettled(transformPromises))
-            .filter(result => result.status === 'fulfilled' && result.value)
-            .map(result => result.value);
-
-        if (transformedResults.length === 0) {
-            return [];
-        }
-
-        const imdbFilteredResults = await this.processIMDBValidationInChunks(transformedResults);
-        
-        this.logger?.debug?.(`IMDB catalog filtering: ${transformedResults.length} → ${imdbFilteredResults.length} results`);
-        return imdbFilteredResults;
+        this.logger?.debug?.(`Search transform: ${results.length} results to ${metas.length} metas, 0 TVDB calls`);
+        return metas;
     }
 
-    async processIMDBValidationInChunks(transformedResults, chunkSize = 8) {
-        const results = [];
-        
-        for (let i = 0; i < transformedResults.length; i += chunkSize) {
-            const chunk = transformedResults.slice(i, i + chunkSize);
-            
-            const chunkPromises = chunk.map(async (meta) => {
-                try {
-                    const numericId = meta.id.replace('tvdb-', '');
-                    
-                    const cachedValidation = await this.cacheService.getImdbValidation(meta.type, numericId);
-                    if (cachedValidation !== null) {
-                        if (cachedValidation.isValid === true) {
-                            return meta;
-                        } else if (cachedValidation.isValid === false) {
-                        this.logger?.debug?.(`"${meta.name}" - Cached as invalid, excluded from catalog`);
-                            return null;
-                        } else {
-                            this.logger?.debug?.(`"${meta.name}" - Cached validation is null, re-validating`);
-                        }
-                    }
-                    
-                    const detailedData = await this.contentFetcher.getContentDetails(meta.type, numericId);
-                    const isValid = detailedData && validateImdbRequirement(detailedData, meta.type);
-                    
-                    await this.cacheService.setImdbValidation(meta.type, numericId, isValid, detailedData);
-                    
-                    if (isValid) {
-                        return meta;
-                    } else {
-                        this.logger?.debug?.(`"${meta.name}" - No IMDB ID, excluded from catalog`);
-                        return null;
-                    }
-                } catch (error) {
-                    return null;
-                }
-            });
+    buildMetaFromSearchItem(item, userLanguage = null) {
+        const stremioType = item.type === 'movie' ? 'movie' : 'series';
+        const numericId = item.tvdb_id ? String(item.tvdb_id) : this.extractNumericId(item.id);
 
-            const chunkResults = await Promise.allSettled(chunkPromises);
-            const validChunkResults = chunkResults
-                .filter(result => result.status === 'fulfilled' && result.value)
-                .map(result => result.value);
-            
-            results.push(...validChunkResults);
+        const translatedName = this.translationService.selectPreferredTranslation(item.translations, userLanguage);
+        const translatedDescription = this.translationService.selectPreferredTranslation(item.overviews, userLanguage);
+
+        const meta = {
+            id: `tvdb-${numericId}`,
+            type: stremioType,
+            name: translatedName || item.name || item.primary_title || 'Unknown Title'
+        };
+
+        const posterSources = [item.image_url, item.thumbnail].filter(isUsableImage);
+        if (posterSources.length > 0) {
+            meta.poster = posterSources[0];
         }
-        
-        return results;
+
+        const yearSources = [
+            item.year,
+            item.first_air_time ? new Date(item.first_air_time).getFullYear() : null
+        ];
+        for (const year of yearSources) {
+            if (year && year > 1800 && year <= new Date().getFullYear() + 5) {
+                meta.year = Number(year);
+                break;
+            }
+        }
+
+        const description = translatedDescription || item.overview;
+        if (description) {
+            meta.description = description;
+        }
+
+        if (Array.isArray(item.genres)) {
+            const genres = item.genres
+                .map(genre => (typeof genre === 'object' ? genre.name || genre.label || genre : genre))
+                .filter(genre => genre && typeof genre === 'string' && genre.trim().length > 0)
+                .map(genre => genre.trim());
+            if (genres.length > 0) meta.genres = genres;
+        }
+
+        const imdbId = extractImdbId(item);
+        if (imdbId) meta.imdb_id = imdbId;
+
+        return meta;
     }
 
-    async transformSearchItemToStremioMeta(item, userLanguage = null) {
+    // A failed lookup leaves that row on its payload poster.
+    async upgradePosters(metas, type, userLanguage = null) {
+        if (!Array.isArray(metas) || metas.length === 0) return metas;
+
+        const tvdbLanguage = this.translationService.mapToTvdbLanguage(userLanguage || 'eng');
+        const started = Date.now();
+
+        await Promise.all(metas.map(meta => this.applyLocalisedPoster(meta, type, tvdbLanguage)));
+
+        this.logger?.debug?.(`Poster upgrade: ${metas.length} rows in ${Date.now() - started}ms (${tvdbLanguage})`);
+        return metas;
+    }
+
+    async applyLocalisedPoster(meta, type, tvdbLanguage) {
         try {
-            const stremioType = item.type === 'movie' ? 'movie' : 'series';
-            const numericId = this.extractNumericId(item.id);
-            const id = `tvdb-${numericId}`;
+            const numericId = meta.id.replace('tvdb-', '');
 
-            let selectedName = item.name || item.primary_title || 'Unknown Title';
-            if (item.translations && Object.keys(item.translations).length > 0) {
-                const translatedName = this.translationService.selectPreferredTranslation(
-                    item.translations, userLanguage
-                );
-                if (translatedName) selectedName = translatedName;
+            if (type === 'series') {
+                const artwork = await this.artworkHandler.getArtwork('series', numericId, tvdbLanguage);
+                if (isUsableImage(artwork?.poster)) meta.poster = artwork.poster;
+                if (artwork?.logo) meta.logo = artwork.logo;
+                return;
             }
 
-            let selectedDescription = item.overview;
-            if (item.overviews && Object.keys(item.overviews).length > 0) {
-                const translatedDescription = this.translationService.selectPreferredTranslation(
-                    item.overviews, userLanguage
-                );
-                if (translatedDescription) selectedDescription = translatedDescription;
-            }
+            const details = await this.contentFetcher.getMovieExtended(numericId);
+            if (!details?.artworks) return;
 
-            const meta = {
-                id,
-                type: stremioType,
-                name: selectedName
-            };
-
-            if (stremioType === 'series') {
-                try {
-                    const artwork = await this.artworkHandler.getArtwork('series', numericId, this.translationService.mapToTvdbLanguage(userLanguage));
-                    
-                    if (artwork.poster) {
-                        meta.poster = artwork.poster;
-                    }
-                    
-                    if (artwork.logo) {
-                        meta.logo = artwork.logo;
-                        this.logger?.debug?.(`Added clearlogo to catalog item: ${selectedName}`);
-                    }
-                } catch (error) {
-                    this.logger?.debug?.(`Artwork error for ${selectedName}: ${error.message}`);
-                }
-            } else if (stremioType === 'movie') {
-                try {
-                    const movieData = await this.contentFetcher.getContentDetails('movie', numericId);
-                    if (movieData && movieData.artworks) {
-                        item.artworks = movieData.artworks;
-                    }
-                } catch (error) {
-                    this.logger?.debug?.(`Movie artwork fetch error for ${selectedName}: ${error.message}`);
-                }
-            }
-
-            if (!meta.poster) {
-                if (item.artworks && item.artworks.length > 0) {
-                    const { posterSources } = this.artworkHandler.getArtworkFallbacks(
-                        item, 
-                        meta.type, 
-                        this.translationService.mapToTvdbLanguage(userLanguage || 'eng')
-                    );
-                    
-                    if (posterSources.length > 0) {
-                        meta.poster = posterSources[0];
-                    }
-                } else {
-                    const posterSources = [
-                        item.image_url, item.poster, item.image, item.thumbnail
-                    ].filter(Boolean);
-                    
-                    if (posterSources.length > 0) {
-                        meta.poster = posterSources[0];
-                    }
-                }
-            }
-
-            const yearSources = [
-                item.year,
-                item.first_air_time ? new Date(item.first_air_time).getFullYear() : null,
-                item.aired ? new Date(item.aired).getFullYear() : null,
-                item.first_aired ? new Date(item.first_aired).getFullYear() : null
-            ];
-            
-            for (const year of yearSources) {
-                if (year && year > 1800 && year <= new Date().getFullYear() + 5) {
-                    meta.year = year;
-                    break;
-                }
-            }
-
-            if (stremioType === 'movie') {
-                try {
-                    const { getEnhancedReleaseInfo } = require('../../utils/theatricalStatus');
-                    const tvdbLanguage = this.translationService.mapToTvdbLanguage(userLanguage || 'eng');
-                    const releaseInfo = getEnhancedReleaseInfo(item, tvdbLanguage);
-                    
-                    if (releaseInfo.released) {
-                        meta.released = releaseInfo.released;
-                    }
-                    
-                    if (releaseInfo.year && !meta.year) {
-                        meta.year = releaseInfo.year;
-                    }
-                    
-                    if (releaseInfo.statusMessage && releaseInfo.theatricalStatus?.inTheaters) {
-                        const currentDescription = selectedDescription || '';
-                        if (currentDescription) {
-                            selectedDescription = `${releaseInfo.statusMessage}\n\n${currentDescription}`;
-                        } else {
-                            selectedDescription = releaseInfo.statusMessage;
-                        }
-                    }
-                } catch (error) {
-                    this.logger?.debug?.(`Theatrical status error for ${selectedName}: ${error.message}`);
-                }
-            }
-
-            if (selectedDescription) {
-                meta.description = selectedDescription;
-            }
-
-            if (item.genres && Array.isArray(item.genres)) {
-                meta.genres = item.genres
-                    .map(genre => typeof genre === 'object' ? genre.name || genre.label || genre : genre)
-                    .filter(g => g && typeof g === 'string' && g.trim().length > 0)
-                    .map(g => g.trim());
-                
-                if (meta.genres.length === 0) delete meta.genres;
-            }
-
-            const ratingSources = [
-                item.vote_average, item.rating?.average, item.score, 
-                item.imdb_rating, item.rating
-            ];
-            
-            for (const rating of ratingSources) {
-                if (rating && !isNaN(rating) && rating > 0) {
-                    meta.imdbRating = rating.toString();
-                    break;
-                }
-            }
-
-            Object.keys(meta).forEach(key => meta[key] === undefined && delete meta[key]);
-            return meta;
+            const { posterSources } = this.artworkHandler.getArtworkFallbacks({ artworks: details.artworks }, 'movie', tvdbLanguage);
+            const poster = posterSources.find(isUsableImage);
+            if (poster) meta.poster = poster;
         } catch (error) {
-            this.logger?.error?.('Error transforming search item:', error);
-            return null;
+            this.logger?.debug?.(`Poster upgrade skipped for ${meta.id}: ${error.message}`);
         }
     }
 

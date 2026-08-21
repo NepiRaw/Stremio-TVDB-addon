@@ -105,10 +105,58 @@ class ContentFetcher {
         }
     }
 
-    async getSeriesExtended(seriesId) {
+    // Shares the metadata cache with getContentDetails, so a later meta request reuses it.
+    async getMovieExtended(movieId) {
+        const numericId = this.extractNumericId(movieId);
         try {
-            const response = await this.apiClient.makeRequest(`/series/${seriesId}/extended`);
-            return response.data;
+            const cached = await this.cacheService.getMetadata('movie', numericId);
+            if (cached) return cached;
+
+            const response = await this.apiClient.makeRequest(`/movies/${numericId}/extended`);
+            const result = response?.data || null;
+            if (result) {
+                await this.cacheService.setMetadata('movie', numericId, null, result);
+            }
+            return result;
+        } catch (error) {
+            this.logger?.error?.(`Movie extended error for ID ${movieId}:`, error.message);
+            return null;
+        }
+    }
+
+    // TVDB indexes external ids under /search/remoteid
+    async getTvdbIdFromImdbId(imdbId, contentType) {
+        const cacheKey = `imdb:remote:${contentType}:${imdbId}`;
+        try {
+            const cached = await this.cacheService.getCachedData('imdb', cacheKey);
+            if (cached) return cached.tvdbId;
+
+            const response = await this.apiClient.makeRequest(`/search/remoteid/${encodeURIComponent(imdbId)}`);
+            const wanted = contentType === 'movie' ? 'movie' : 'series';
+            const match = (response?.data || []).find(entry => entry?.[wanted]?.id);
+            const tvdbId = match ? String(match[wanted].id) : null;
+
+            await this.cacheService.setCachedData('imdb', cacheKey, { tvdbId }, this.cacheService.CACHE_TTLS.imdb);
+            return tvdbId;
+        } catch (error) {
+            this.logger?.error?.(`Remote id lookup error for ${imdbId}:`, error.message);
+            return null;
+        }
+    }
+
+    // The extended record is a superset of /series/{id} and carries seasons
+    async getSeriesExtended(seriesId) {
+        const numericId = this.extractNumericId(seriesId);
+        try {
+            const cached = await this.cacheService.getMetadata('series', numericId);
+            if (cached && Array.isArray(cached.seasons)) return cached;
+
+            const response = await this.apiClient.makeRequest(`/series/${numericId}/extended`);
+            const result = response?.data || null;
+            if (result) {
+                await this.cacheService.setMetadata('series', numericId, null, result);
+            }
+            return result;
         } catch (error) {
             this.logger?.error?.(`Series extended error for ID ${seriesId}:`, error.message);
             return null;
@@ -152,6 +200,7 @@ class ContentFetcher {
                         externalIds.imdb_id = remoteId.startsWith('tt') ? remoteId : `tt${remoteId}`;
                         break;
                     case 'themoviedb':
+                    case 'themoviedb.com':
                     case 'tmdb':
                         externalIds.tmdb_id = remoteId.toString();
                         break;
@@ -160,7 +209,8 @@ class ContentFetcher {
                         break;
                     default:
                         if (sourceName && remoteId) {
-                            externalIds[`${sourceName}_id`] = remoteId.toString();
+                            const key = sourceName.replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+                            if (key) externalIds[`${key}_id`] = remoteId.toString();
                         }
                 }
             });

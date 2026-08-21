@@ -29,7 +29,13 @@ class CacheService {
         this.startCleanupInterval();
     }
 
-    getCachedData(cacheMap, key) {
+    getCachedData(cacheTypeOrMap, key) {
+        const cacheMap = this.getCacheMap(cacheTypeOrMap);
+        if (!cacheMap) {
+            this.logger?.warn?.(`Unknown cache type: ${cacheTypeOrMap}`);
+            return null;
+        }
+
         const cached = cacheMap.get(key);
         const now = Date.now();
         if (cached) {
@@ -47,7 +53,13 @@ class CacheService {
         return null;
     }
 
-    setCachedData(cacheMap, key, data, ttl) {
+    setCachedData(cacheTypeOrMap, key, data, ttl) {
+        const cacheMap = this.getCacheMap(cacheTypeOrMap);
+        if (!cacheMap) {
+            this.logger?.warn?.(`Unknown cache type: ${cacheTypeOrMap}`);
+            return;
+        }
+
         const now = Date.now();
         const expiry = now + ttl;
         const entry = {
@@ -225,6 +237,8 @@ class CacheService {
     }
 
     getCacheMap(cacheType) {
+        if (cacheType instanceof Map) return cacheType;
+
         const cacheMappers = {
             'search': this.searchCache,
             'imdb': this.imdbCache,
@@ -233,7 +247,7 @@ class CacheService {
             'metadata': this.metadataCache,
             'season': this.seasonCache
         };
-        return cacheMappers[cacheType];
+        return cacheMappers[cacheType] || null;
     }
 
     getStats() {
