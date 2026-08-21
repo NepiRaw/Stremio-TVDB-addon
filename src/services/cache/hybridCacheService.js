@@ -6,6 +6,8 @@
 
 const { MongoClient } = require('mongodb');
 
+const escapeRegex = value => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
 class HybridCacheService {
     constructor(logger = null) {
         this.logger = logger;
@@ -183,6 +185,41 @@ class HybridCacheService {
             document,
             { upsert: true }
         );
+    }
+
+    /**
+     * Deletes every key starting with one of the given prefixes from L1 and L2
+     */
+    async invalidateByPrefixes(prefixesByType) {
+        let removed = 0;
+
+        for (const [cacheType, prefixes] of Object.entries(prefixesByType || {})) {
+            const cacheMap = this.getCacheMap(cacheType);
+            if (!cacheMap || !Array.isArray(prefixes) || prefixes.length === 0) continue;
+
+            for (const key of [...cacheMap.keys()]) {
+                if (prefixes.some(prefix => key.startsWith(prefix))) {
+                    cacheMap.delete(key);
+                    removed++;
+                }
+            }
+
+            if (!this.mongoConnected) continue;
+
+            const collectionName = this.mongoCollections[cacheType];
+            if (!collectionName) continue;
+
+            try {
+                const result = await this.mongoDB.collection(collectionName).deleteMany({
+                    $or: prefixes.map(prefix => ({ key: { $regex: `^${escapeRegex(prefix)}` } }))
+                });
+                removed += result.deletedCount || 0;
+            } catch (error) {
+                this.logger?.error?.(`❌ L2 invalidation failed for ${cacheType}: ${error.message}`);
+            }
+        }
+
+        return removed;
     }
 
     async clearByPattern(pattern) {
@@ -399,7 +436,7 @@ class HybridCacheService {
     }
 
     startCleanupInterval() {
-        setInterval(() => this.cleanup(), 5 * 60 * 1000);
+        setInterval(() => this.cleanup(), 5 * 60 * 1000).unref();
         this.logger?.info('🕐 Enhanced hybrid cache cleanup interval started (5 minutes)');
     }
 

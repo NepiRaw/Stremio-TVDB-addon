@@ -194,6 +194,28 @@ class CacheService {
         this.logger?.info(`🗑️ Cleared all caches:`, counts);
     }
 
+    /**
+     * Deletes every key starting with one of the given prefixes, grouped by cache type.
+     * Takes the whole batch at once so callers do not pay a round trip per prefix.
+     */
+    invalidateByPrefixes(prefixesByType) {
+        let removed = 0;
+
+        for (const [cacheType, prefixes] of Object.entries(prefixesByType || {})) {
+            const cacheMap = this.getCacheMap(cacheType);
+            if (!cacheMap || !Array.isArray(prefixes) || prefixes.length === 0) continue;
+
+            for (const key of [...cacheMap.keys()]) {
+                if (prefixes.some(prefix => key.startsWith(prefix))) {
+                    cacheMap.delete(key);
+                    removed++;
+                }
+            }
+        }
+
+        return removed;
+    }
+
     clearByPattern(pattern) {
         let totalRemoved = 0;
         
@@ -302,7 +324,7 @@ class CacheService {
     }
 
     startCleanupInterval() {
-        setInterval(() => this.cleanup(), 5 * 60 * 1000);
+        setInterval(() => this.cleanup(), 5 * 60 * 1000).unref();
         this.logger?.info('🕐 Enhanced cache cleanup interval started (5 minutes)');
     }
 }
