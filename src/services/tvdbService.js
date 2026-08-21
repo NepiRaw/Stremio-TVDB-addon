@@ -6,6 +6,7 @@ const CatalogTransformer = require('./tvdb/catalogTransformer');
 const MetadataTransformer = require('./tvdb/metadataTransformer');
 const UpdatesService = require('./tvdb/updatesService');
 const { getEnhancedReleaseInfo } = require('../utils/theatricalStatus');
+const { rankSearchResults } = require('../utils/searchRanking');
 
 class TVDBService {
     constructor(cacheService, ratingService = null, logger = null) {
@@ -149,7 +150,8 @@ class TVDBService {
 
         try {
             const response = await this.makeRequest('/search', params);
-            const results = response.data || [];
+            // TVDB returns no relevance order, so rank before caching: warm searches pay nothing.
+            const results = rankSearchResults(response.data || [], query);
             
             if (this.cacheService.setCachedData) {
                 const cacheTTL = 2 * 60 * 60 * 1000; // 2 hours
