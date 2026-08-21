@@ -4,6 +4,7 @@
  */
 
 const { mapToTvdbLanguage, selectPreferredTranslation } = require('../../utils/languageMap');
+const { fetchAllEpisodePages } = require('../../utils/episodePager');
 
 class TranslationService {
     constructor(apiClient, cacheService, logger) {
@@ -60,24 +61,14 @@ class TranslationService {
     }
 
     async _fetchAllEpisodeTranslations(seriesId, language) {
-        let allEpisodes = [];
-        let page = 0;
-        while (true) {
-            try {
-                const response = await this.apiClient.makeRequest(`/series/${seriesId}/episodes/default/${language}`, { page });
-                const episodes = response?.data?.episodes || [];
-                if (episodes.length === 0) {
-                    break; 
-                }
-                allEpisodes = allEpisodes.concat(episodes);
-                this.logger.debug(`... fetched page ${page} (${episodes.length} episodes) for ${language} for series ${seriesId}`);
-                page++;
-            } catch (error) {
-                this.logger.warn(`Failed to fetch page ${page} of episode translations for series ${seriesId} (${language}):`, error.message);
-                break;
-            }
+        try {
+            const allEpisodes = await fetchAllEpisodePages(this.apiClient, `/series/${seriesId}/episodes/default/${language}`);
+            this.logger.debug(`... fetched ${allEpisodes.length} episode translations for ${language} for series ${seriesId}`);
+            return allEpisodes.length > 0 ? allEpisodes : null;
+        } catch (error) {
+            this.logger.warn(`Failed to fetch episode translations for series ${seriesId} (${language}):`, error.message);
+            return null;
         }
-        return allEpisodes.length > 0 ? allEpisodes : null;
     }
 
     async getBulkEpisodeTranslations(seriesId, tvdbLanguage) {
@@ -91,13 +82,16 @@ class TranslationService {
 
         try {
             this.logger.info(`🌍 Fetching all pages of episode translations for series ${seriesId} (${tvdbLanguage})...`);
-            translations.primary = await this._fetchAllEpisodeTranslations(seriesId, tvdbLanguage);
-            
-            if (tvdbLanguage !== 'eng') {
-                this.logger.info(`🌍 Fetching English fallback episode translations for series ${seriesId}...`);
-                translations.fallback = await this._fetchAllEpisodeTranslations(seriesId, 'eng');
-            } else {
+
+            if (tvdbLanguage === 'eng') {
+                translations.primary = await this._fetchAllEpisodeTranslations(seriesId, 'eng');
                 translations.fallback = translations.primary;
+            } else {
+                this.logger.info(`🌍 Fetching English fallback episode translations for series ${seriesId}...`);
+                [translations.primary, translations.fallback] = await Promise.all([
+                    this._fetchAllEpisodeTranslations(seriesId, tvdbLanguage),
+                    this._fetchAllEpisodeTranslations(seriesId, 'eng')
+                ]);
             }
 
             if (!translations.primary && tvdbLanguage !== 'eng' && translations.fallback) {

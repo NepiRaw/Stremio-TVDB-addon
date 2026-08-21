@@ -27,6 +27,12 @@ class TVDBService {
             throw new Error('TVDB_API_KEY environment variable is required');
         }
 
+        // Healthy TVDB calls land under 300 ms, so this only fires on a connection that stopped answering.
+        this.http = axios.create({
+            timeout: Number(process.env.TVDB_REQUEST_TIMEOUT_MS) || 5000,
+            headers: { 'Accept': 'application/json' }
+        });
+
         this.contentFetcher = new ContentFetcher(this, this.cacheService, this.logger);
         this.translationService = new TranslationService(this, this.cacheService, this.logger);
         this.artworkHandler = new ArtworkHandler(this, this.cacheService, this.logger);
@@ -62,7 +68,7 @@ class TVDBService {
 
     async authenticate() {
         try {
-            const response = await axios.post(`${this.baseURL}/login`, {
+            const response = await this.http.post(`${this.baseURL}/login`, {
                 apikey: this.apiKey
             });
 
@@ -88,7 +94,7 @@ class TVDBService {
         await this.ensureValidToken();
 
         try {
-            const response = await axios.get(`${this.baseURL}${endpoint}`, {
+            const response = await this.http.get(`${this.baseURL}${endpoint}`, {
                 headers: {
                     'Authorization': `Bearer ${this.token}`,
                     'Accept': 'application/json'
@@ -102,7 +108,7 @@ class TVDBService {
                 this.logger.info('🔄 Token expired, refreshing...');
                 await this.authenticate();
                 
-                const retryResponse = await axios.get(`${this.baseURL}${endpoint}`, {
+                const retryResponse = await this.http.get(`${this.baseURL}${endpoint}`, {
                     headers: {
                         'Authorization': `Bearer ${this.token}`,
                         'Accept': 'application/json'

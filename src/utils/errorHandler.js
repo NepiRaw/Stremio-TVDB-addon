@@ -15,6 +15,14 @@ function asyncHandler(fn) {
     };
 }
 
+/**
+ * A request that never received an HTTP response: timeout, DNS failure, refused connection.
+ * The answer is unknown rather than absent, so callers must not cache it as a negative result.
+ */
+function isTransportError(error) {
+    return Boolean(error) && !error.response;
+}
+
 class TVDBError extends Error {
     constructor(message, statusCode = 500) {
         super(message);
@@ -34,6 +42,7 @@ class ValidationError extends Error {
 module.exports = {
     errorHandler,
     asyncHandler,
+    isTransportError,
     TVDBError,
     ValidationError
 };

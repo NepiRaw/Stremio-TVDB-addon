@@ -2,6 +2,8 @@
  * TVDB Content Fetcher
  * Unified content fetching for movies and series with shared logic
  */
+const { fetchAllEpisodePages } = require('../../utils/episodePager');
+
 class ContentFetcher {
     constructor(apiClient, cacheService, logger) {
         this.apiClient = apiClient;
@@ -77,27 +79,19 @@ class ContentFetcher {
     }
 
     async getSeriesEpisodes(seriesId, seasonType = 'default') {
-    try {
-        const cacheKey = `episodes:${seasonType}`;
-        const cachedEpisodes = await this.cacheService.getSeasonData(seriesId, cacheKey);
-        if (cachedEpisodes) {
-            this.logger?.debug?.(`Episodes cache HIT for series ${seriesId} (${seasonType})`);
-            return cachedEpisodes;
-        }
+        try {
+            const cacheKey = `episodes:${seasonType}`;
+            const cachedEpisodes = await this.cacheService.getSeasonData(seriesId, cacheKey);
+            if (cachedEpisodes) {
+                this.logger?.debug?.(`Episodes cache HIT for series ${seriesId} (${seasonType})`);
+                return cachedEpisodes;
+            }
 
-        let allEpisodes = [];
-        let page = 0;
-        while (true) {
-            const response = await this.apiClient.makeRequest(`/series/${seriesId}/episodes/${seasonType}`, { page });
-            const episodes = response?.data?.episodes || [];
-            if (episodes.length === 0) break;
-            allEpisodes = allEpisodes.concat(episodes);
-            page++;
-        }
+            const allEpisodes = await fetchAllEpisodePages(this.apiClient, `/series/${seriesId}/episodes/${seasonType}`);
 
-        await this.cacheService.setSeasonData(seriesId, cacheKey, allEpisodes);
-        this.logger?.debug?.(`Got ${allEpisodes.length} episodes for series ${seriesId} (${seasonType}) - cached`);
-        return allEpisodes;
+            await this.cacheService.setSeasonData(seriesId, cacheKey, allEpisodes);
+            this.logger?.debug?.(`Got ${allEpisodes.length} episodes for series ${seriesId} (${seasonType}) - cached`);
+            return allEpisodes;
         } catch (error) {
             this.logger?.error?.(`Series episodes error for ID ${seriesId}:`, error.message);
             await this.cacheService.setSeasonData(seriesId, `episodes:${seasonType}`, []);

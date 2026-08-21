@@ -357,14 +357,18 @@ class MetadataTransformer {
             meta.behaviorHints = { defaultVideoId: null, hasScheduledVideos: false };
             return;
         }
-        const episodes = await this.contentFetcher.getSeriesEpisodes(numericId);
+        // Independent of each other, so the episode list and its translations are fetched together
+        const [episodes, translations] = await Promise.all([
+            this.contentFetcher.getSeriesEpisodes(numericId),
+            this.translationService.getBulkEpisodeTranslations(numericId, tvdbLanguage)
+        ]);
+
         if (episodes.length === 0) {
             meta.behaviorHints = { defaultVideoId: null, hasScheduledVideos: false };
             return;
         }
         this.logger?.info?.(`📺 Got ${episodes.length} episodes from API`);
 
-        const translations = await this.translationService.getBulkEpisodeTranslations(numericId, tvdbLanguage);
         const { primaryLookup, fallbackLookup } = this.translationService.createTranslationLookups(
             translations.primary, translations.fallback
         );
