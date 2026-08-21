@@ -75,7 +75,7 @@ try {
     if (process.env.OMDB_API_KEY) {
         logger.info('🎬 Rating service initialized with OMDB API - IMDb ratings will be enhanced');
     } else {
-        logger.info('🎬 Rating service initialized with imdbapi.dev fallback - IMDb ratings will be enhanced');
+        logger.info('🎬 Rating service initialized with Cinemeta fallback - IMDb ratings will be enhanced');
     }
 } catch (error) {
     logger.error('❌ Failed to initialize Rating service:', error.message);
@@ -301,34 +301,36 @@ app.use('*', (req, res) => {
     res.status(404).json({ error: 'Not found' });
 });
 
-const server = app.listen(PORT, async () => {
-    logger.info(`🚀 TVDB Stremio Addon server running on port ${PORT}`);
-    const baseUrl = process.env.BASE_URL;
-    if (baseUrl && baseUrl.trim()) {
-        const mockReq = { protocol: 'http', get: () => `localhost:${PORT}` };
-        const { getBaseUrl } = require('./src/utils/urlBuilder');
-        const actualBaseUrl = getBaseUrl(mockReq);
-        logger.info(`📱 Installation page: ${actualBaseUrl}/`);
-        logger.info(`📋 Manifest: ${actualBaseUrl}/manifest.json`);
-        logger.info(`🌐 Production deployment detected`);
-    } else {
-        logger.info(`📱 Installation page: http://localhost:${PORT}`);
-        logger.info(`📋 Manifest: http://localhost:${PORT}/manifest.json`);
-        logger.info(`🔧 Development mode (auto-detect URLs from requests)`);
-    }
-    try {
-        await tvdbService.start();
-    } catch (error) {
-        logger.error('❌ Failed to start TVDB service:', error.message);
-    }
-});
-
-process.on('SIGTERM', () => {
-    logger.info('SIGTERM received, shutting down gracefully...');
-    tvdbService.stop();
-    server.close(() => {
-        logger.info('Process terminated');
+if (require.main === module) {
+    const server = app.listen(PORT, async () => {
+        logger.info(`🚀 TVDB Stremio Addon server running on port ${PORT}`);
+        const baseUrl = process.env.BASE_URL;
+        if (baseUrl && baseUrl.trim()) {
+            const mockReq = { protocol: 'http', get: () => `localhost:${PORT}` };
+            const { getBaseUrl } = require('./src/utils/urlBuilder');
+            const actualBaseUrl = getBaseUrl(mockReq);
+            logger.info(`📱 Installation page: ${actualBaseUrl}/`);
+            logger.info(`📋 Manifest: ${actualBaseUrl}/manifest.json`);
+            logger.info(`🌐 Production deployment detected`);
+        } else {
+            logger.info(`📱 Installation page: http://localhost:${PORT}`);
+            logger.info(`📋 Manifest: http://localhost:${PORT}/manifest.json`);
+            logger.info(`🔧 Development mode (auto-detect URLs from requests)`);
+        }
+        try {
+            await tvdbService.start();
+        } catch (error) {
+            logger.error('❌ Failed to start TVDB service:', error.message);
+        }
     });
-});
+
+    process.on('SIGTERM', () => {
+        logger.info('SIGTERM received, shutting down gracefully...');
+        tvdbService.stop();
+        server.close(() => {
+            logger.info('Process terminated');
+        });
+    });
+}
 
 module.exports = app;
