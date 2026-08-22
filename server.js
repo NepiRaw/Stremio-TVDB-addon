@@ -7,7 +7,6 @@ const path = require('path');
 const manifestHandler = require('./src/handlers/manifestHandler');
 const catalogHandler = require('./src/handlers/catalogHandler');
 const metaHandler = require('./src/handlers/metaHandler');
-const installationPageHandler = require('./src/handlers/installationPageHandler');
 const TVDBService = require('./src/services/tvdbService');
 const RatingService = require('./src/services/ratingService');
 const { errorHandler } = require('./src/utils/errorHandler');
@@ -93,9 +92,6 @@ app.get('/api/app-config', (req, res) => {
     const appConfig = catalogConfig.getAppConfig(req);
     res.json(appConfig);
 });
-
-// Routes
-app.get('/', (req, res) => installationPageHandler(req, res, logger));
 
 // Language-specific routes
 app.get('/:language/manifest.json', (req, res) => manifestHandler(req, res, logger));

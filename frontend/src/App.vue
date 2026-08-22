@@ -13,8 +13,11 @@
       
       <!-- Title and Version -->
       <h1 class="text-white text-[2.5rem] mb-3 font-bold drop-shadow-md">{{ appConfig.ui?.title || 'TVDB Addon' }}</h1>
-      <div class="text-primary-light text-[1rem] mb-8 font-light tracking-wide">
-        Version {{ version }}
+      <div class="mb-8">
+        <span class="inline-flex items-center gap-2 rounded-full bg-primary/15 border border-primary/30 px-4 py-1 text-primary-light text-[0.9rem] font-medium tracking-wide">
+          <i class="fas fa-code-branch text-[0.8rem]"></i>
+          v{{ version }}
+        </span>
       </div>
       
       <!-- Description -->
