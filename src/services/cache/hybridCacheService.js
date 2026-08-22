@@ -52,15 +52,12 @@ class HybridCacheService {
         }
 
         try {
-            this.logger?.info('🔌 Initializing MongoDB connection...');
             this.mongoClient = new MongoClient(process.env.MONGODB_URI);
             await this.mongoClient.connect();
             
             this.mongoDB = this.mongoClient.db('stremio-tvdb-cache');
             this.mongoConnected = true;
-            
-            this.logger?.info('✅ MongoDB connected successfully');
-            
+
             // Create indexes for performance
             await this.createMongoIndexes();
             
@@ -88,7 +85,7 @@ class HybridCacheService {
                     { unique: true }
                 );
             }
-            this.logger?.info('📇 MongoDB indexes created successfully');
+            this.logger?.boot?.('✅ MongoDB connected, indexes ready');
         } catch (error) {
             this.logger?.error?.('❌ Error creating MongoDB indexes:', error.message);
         }
@@ -106,13 +103,29 @@ class HybridCacheService {
         return cacheMappers[cacheType];
     }
 
+
+    // A cache line reports the tier it answered from and what the lookup cost.
+    trace(marker, started, message) {
+        if (this.logger?.event) {
+            this.logger.event({ level: 'debug', marker, ms: Date.now() - started, message });
+        } else {
+            this.logger?.debug?.(message);
+        }
+    }
+
+    // A cached empty answer is the dangerous kind, so it is the one worth seeing written.
+    traceWrite(started, key, data, ttl) {
+        const empty = data === null || data === undefined || (Array.isArray(data) && data.length === 0);
+        if (empty) this.trace('none', started, `write empty · ${key} · ttl ${Math.round(ttl / 60000)}min`);
+    }
+
     async getCachedData(cacheType, key) {
-        // L1 Cache: Check in-memory first (fastest)
+        const started = Date.now();
         const memoryCache = this.getCacheMap(cacheType);
         const memoryEntry = memoryCache.get(key);
         
         if (memoryEntry && Date.now() < memoryEntry.expiry) {
-            this.logger?.debug(`💾 Cache:HIT (L1-Memory): ${key}`);
+            this.trace('cache', started, `hit L1 · ${key}`);
             return memoryEntry.data;
         }
         
@@ -126,7 +139,7 @@ class HybridCacheService {
                 const mongoEntry = await collection.findOne({ key: key });
                 
                 if (mongoEntry && new Date() < mongoEntry.expiry) {
-                    this.logger?.debug(`💾 Cache:HIT (L2-MongoDB): ${key}`);
+                    this.trace('cache', started, `hit L2 · ${key}`);
 
                     const memoryEntry = {
                         data: mongoEntry.data,
@@ -139,15 +152,16 @@ class HybridCacheService {
                     return mongoEntry.data;
                 }
             } catch (error) {
-                this.logger?.error?.(`❌ MongoDB cache read error: ${error.message}`);
+                this.logger?.error?.(`MongoDB cache read error: ${error.message}`);
             }
         }
         
-        this.logger?.debug(`🔍 Cache:MISS (L1+L2): ${key}`);
+        this.trace('none', started, `miss L1+L2 · ${key}`);
         return null;
     }
 
     async setCachedData(cacheType, key, data, ttl) {
+        const started = Date.now();
         const expiry = Date.now() + ttl;
         
         const memoryCache = this.getCacheMap(cacheType);
@@ -161,11 +175,11 @@ class HybridCacheService {
         
         if (this.mongoConnected) {
             this.storeInMongoDB(cacheType, key, data, expiry).catch(error => {
-                this.logger?.error?.(`❌ MongoDB cache write error: ${error.message}`);
+                this.logger?.error?.(`MongoDB cache write error: ${error.message}`);
             });
         }
         
-        this.logger?.debug(`💾 Cached (Hybrid): ${key} (TTL: ${Math.round(ttl / 60000)}min)`);
+        this.traceWrite(started, key, data, ttl);
         return true;
     }
 
@@ -215,7 +229,7 @@ class HybridCacheService {
                 });
                 removed += result.deletedCount || 0;
             } catch (error) {
-                this.logger?.error?.(`❌ L2 invalidation failed for ${cacheType}: ${error.message}`);
+                this.logger?.error?.(`L2 invalidation failed for ${cacheType}: ${error.message}`);
             }
         }
 
@@ -266,7 +280,7 @@ class HybridCacheService {
                     }
                 }
             } catch (error) {
-                this.logger?.error?.(`❌ Error clearing MongoDB cache by pattern: ${error.message}`);
+                this.logger?.error?.(`Error clearing MongoDB cache by pattern: ${error.message}`);
             }
         }
 
@@ -345,7 +359,7 @@ class HybridCacheService {
 
             return results;
         } catch (error) {
-            this.logger?.error?.('❌ Error inspecting L2 cache:', error.message);
+            this.logger?.error?.('Error inspecting L2 cache:', error.message);
             return { error: error.message, entries: [] };
         }
     }
@@ -398,7 +412,7 @@ class HybridCacheService {
 
             return summary;
         } catch (error) {
-            this.logger?.error?.('❌ Error getting L2 summary:', error.message);
+            this.logger?.error?.('Error getting L2 summary:', error.message);
             return { error: error.message };
         }
     }
@@ -437,7 +451,7 @@ class HybridCacheService {
 
     startCleanupInterval() {
         setInterval(() => this.cleanup(), 5 * 60 * 1000).unref();
-        this.logger?.info('🕐 Enhanced hybrid cache cleanup interval started (5 minutes)');
+        this.logger?.debug?.('cache cleanup timer started, every 5 minutes');
     }
 
     async clearAll() {
@@ -470,7 +484,7 @@ class HybridCacheService {
                 }
                 this.logger?.info('🗑️ Cleared all L2 caches:', l2Counts);
             } catch (error) {
-                this.logger?.error?.('❌ Error clearing L2 caches:', error.message);
+                this.logger?.error?.('Error clearing L2 caches:', error.message);
             }
         }
     }

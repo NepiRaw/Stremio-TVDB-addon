@@ -26,7 +26,7 @@ class MetadataTransformer {
             let primaryId;
             if (externalIds.imdb_id) {
                 primaryId = externalIds.imdb_id;
-                this.logger?.debug(`Using IMDb ID as primary: ${primaryId} (TVDB: ${numericId})`);
+                this.logger?.debug(`imdb ${primaryId} as primary id`);
             } else {
                 primaryId = `tvdb-${numericId}`;
                 this.logger?.debug(`Using TVDB ID as primary: ${primaryId} (no IMDb ID available)`);
@@ -197,7 +197,7 @@ class MetadataTransformer {
 
     addEnhancedYear(meta, item) {
         if (meta.type === 'movie' && meta.year) {
-            this.logger?.info?.(`📅 Preserving theatrical year for movie: ${meta.year}`);
+            this.logger?.debug?.(`Preserving theatrical year for movie: ${meta.year}`);
             return;
         }
         
@@ -210,20 +210,20 @@ class MetadataTransformer {
             const status = this.extractValidStatus(item.status);
             if (status === 'ended' && endYear && endYear !== startYear) {
                 meta.year = `${startYear}-${endYear}`;
-                this.logger?.info?.(`📅 Series date range: ${meta.year}`);
+                this.logger?.debug?.(`Series date range: ${meta.year}`);
             } else if (status === 'ended') {
                 meta.year = startYear;
-                this.logger?.info?.(`📅 Series year: ${meta.year}`);
+                this.logger?.debug?.(`Series year: ${meta.year}`);
             } else if (status === 'continuing') {
                 meta.year = `${startYear}-`;
-                this.logger?.info?.(`📅 Ongoing series: ${meta.year}`);
+                this.logger?.debug?.(`Ongoing series: ${meta.year}`);
             } else {
                 if (endYear && endYear !== startYear) {
                     meta.year = `${startYear}-${endYear}`;
                 } else {
                     meta.year = startYear;
                 }
-                this.logger?.info?.(`📅 Series year (unknown status): ${meta.year}`);
+                this.logger?.debug?.(`Series year (unknown status): ${meta.year}`);
             }
         } else if (meta.type === 'movie' && !meta.year) {
             meta.year = startYear;
@@ -251,7 +251,7 @@ class MetadataTransformer {
                 } else {
                     meta.description = releaseInfo.statusMessage;
                 }
-                this.logger?.info?.(`🎬 Added theatrical status: ${releaseInfo.statusMessage}`);
+                this.logger?.debug?.(`Added theatrical status: ${releaseInfo.statusMessage}`);
             }
         } catch (error) {
             this.logger?.error?.('Error adding theatrical status:', error);
@@ -294,7 +294,7 @@ class MetadataTransformer {
         
         if (isAnimatedContent) {
             // Skip cast for anime/animation content
-            this.logger?.info?.(`🎭 Skipping cast for animated content: ${meta.name}`);
+            this.logger?.debug?.(`Skipping cast for animated content: ${meta.name}`);
             return;
         }
 
@@ -320,7 +320,7 @@ class MetadataTransformer {
 
         if (topActors.length > 0) {
             meta.cast = topActors;
-            this.logger?.info?.(`🎭 Added ${topActors.length} cast members (sorted by importance): ${topActors.join(', ')}`);
+            this.logger?.debug?.(`Added ${topActors.length} cast members (sorted by importance): ${topActors.join(', ')}`);
         }
     }
 
@@ -351,7 +351,7 @@ class MetadataTransformer {
         }
 
         const validSeasons = this.contentFetcher.filterValidSeasons(seasonsData);
-        this.logger?.info?.(`📺 Filtered to ${validSeasons.length} official seasons`);
+        this.logger?.debug?.(`Filtered to ${validSeasons.length} official seasons`);
 
         if (validSeasons.length === 0) {
             meta.behaviorHints = { defaultVideoId: null, hasScheduledVideos: false };
@@ -367,21 +367,18 @@ class MetadataTransformer {
             meta.behaviorHints = { defaultVideoId: null, hasScheduledVideos: false };
             return;
         }
-        this.logger?.info?.(`📺 Got ${episodes.length} episodes from API`);
 
         const { primaryLookup, fallbackLookup } = this.translationService.createTranslationLookups(
             translations.primary, translations.fallback
         );
 
         const airedEpisodes = this.contentFetcher.filterAiredEpisodes(episodes);
-        this.logger?.info?.(`📺 Filtered to ${airedEpisodes.length} episodes (aired + upcoming)`);
 
         const episodesBySeason = this.contentFetcher.groupEpisodesBySeason(airedEpisodes);
         const seasonsWithContent = validSeasons.filter(season => 
             episodesBySeason[season.number] && episodesBySeason[season.number].length > 0
         );
         meta.seasons = seasonsWithContent.length;
-        this.logger?.info?.(`📺 Final seasons with content: ${meta.seasons}`);
 
         const videoMap = new Map();
         for (const episode of airedEpisodes) {
@@ -409,7 +406,7 @@ class MetadataTransformer {
         }
 
         meta.videos = Array.from(videoMap.values());
-        this.logger?.info?.(`📺 Created ${meta.videos.length} video entries`);
+        this.logger?.debug?.(`episodes ${episodes.length} → ${airedEpisodes.length} aired · ${meta.seasons} seasons · ${meta.videos.length} videos`);
 
         meta.behaviorHints = {
             defaultVideoId: null,
@@ -418,7 +415,6 @@ class MetadataTransformer {
     }
 
     addMovieContent(meta, imdbId) {
-        this.logger?.info?.(`🎬 Movie processing complete: ${meta.name} (${meta.id})`);
         
         if (meta.videos) {
             delete meta.videos;

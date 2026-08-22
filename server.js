@@ -47,20 +47,12 @@ function logEnvVar(name, value, opts = {}) {
     }
 }
 
-// TVDB_API_KEY (required)
 logEnvVar('TVDB_API_KEY', process.env.TVDB_API_KEY, { required: true, sensitive: true });
-// OMDB_API_KEY (optional, always hidden)
-logEnvVar('OMDB_API_KEY', process.env.OMDB_API_KEY, { fallback: 'imdbapi.dev fallback' });
-// BASE_URL (optional)
-logEnvVar('BASE_URL', process.env.BASE_URL, { fallback: 'auto-detect from request headers' });
-// PORT (optional, default 3000)
-logEnvVar('PORT', process.env.PORT, { fallback: 3000 });
-// ADMIN_API_KEY (optional, but disables admin endpoints if missing)
+logEnvVar('OMDB_API_KEY', process.env.OMDB_API_KEY, { fallback: 'Cinemeta only' });
 logEnvVar('ADMIN_API_KEY', process.env.ADMIN_API_KEY, { sensitive: true });
-// MONGODB_URI (optional, but required for hybrid/mongodb cache, always hide credentials)
+logEnvVar('PORT', process.env.PORT, { fallback: 3000 });
+logEnvVar('BASE_URL', process.env.BASE_URL, { fallback: 'auto-detect from request headers' });
 logEnvVar('MONGODB_URI', process.env.MONGODB_URI);
-// CACHE_TYPE (optional, default memory)
-logEnvVar('CACHE_TYPE', process.env.CACHE_TYPE, { fallback: 'memory' });
 
 // Initialize catalog configuration and log status
 const catalogConfig = require('./src/config/catalogConfig');
@@ -72,11 +64,7 @@ const cacheService = CacheFactory.createCache(logger);
 let ratingService = null;
 try {
     ratingService = new RatingService(cacheService, process.env.OMDB_API_KEY);
-    if (process.env.OMDB_API_KEY) {
-        logger.info('🎬 Rating service initialized with OMDB API - IMDb ratings will be enhanced');
-    } else {
-        logger.info('🎬 Rating service initialized with Cinemeta fallback - IMDb ratings will be enhanced');
-    }
+    logger.info(`🎬 Ratings: ${process.env.OMDB_API_KEY ? 'OMDB enabled, Cinemeta fallback' : 'Cinemeta only'}`);
 } catch (error) {
     logger.error('❌ Failed to initialize Rating service:', error.message);
 }
@@ -303,25 +291,18 @@ app.use('*', (req, res) => {
 
 if (require.main === module) {
     const server = app.listen(PORT, async () => {
-        logger.info(`🚀 TVDB Stremio Addon server running on port ${PORT}`);
         const baseUrl = process.env.BASE_URL;
-        if (baseUrl && baseUrl.trim()) {
-            const mockReq = { protocol: 'http', get: () => `localhost:${PORT}` };
-            const { getBaseUrl } = require('./src/utils/urlBuilder');
-            const actualBaseUrl = getBaseUrl(mockReq);
-            logger.info(`📱 Installation page: ${actualBaseUrl}/`);
-            logger.info(`📋 Manifest: ${actualBaseUrl}/manifest.json`);
-            logger.info(`🌐 Production deployment detected`);
-        } else {
-            logger.info(`📱 Installation page: http://localhost:${PORT}`);
-            logger.info(`📋 Manifest: http://localhost:${PORT}/manifest.json`);
-            logger.info(`🔧 Development mode (auto-detect URLs from requests)`);
-        }
+        const mockReq = { protocol: 'http', get: () => `localhost:${PORT}` };
+        const { getBaseUrl } = require('./src/utils/urlBuilder');
+        const rootUrl = baseUrl && baseUrl.trim() ? getBaseUrl(mockReq) : `http://localhost:${PORT}`;
+        logger.info(`🚀 Server on port ${PORT} · ${process.env.NODE_ENV || 'development'}`);
+        logger.info(`📋 Manifest: ${rootUrl}/manifest.json`);
         try {
             await tvdbService.start();
         } catch (error) {
             logger.error('❌ Failed to start TVDB service:', error.message);
         }
+        logger.ready();
     });
 
     process.on('SIGTERM', () => {

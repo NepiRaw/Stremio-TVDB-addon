@@ -3,6 +3,8 @@
  * Handles intelligent cache invalidation using TVDB /updates endpoint
  */
 
+const { context } = require('../../utils/logger');
+
 // TVDB sends plural entity names and separate translated* variants; recordType is always empty.
 const ENTITY_TYPES = {
     series: 'series', show: 'series', translatedseries: 'series',
@@ -47,7 +49,7 @@ class UpdatesService {
         
         this.intervalId = setInterval(() => this.checkForUpdates(), this.updateInterval);
         
-        this.logger.info(`🔄 TVDB Updates service started (checking every ${Math.round(this.updateInterval / 3600000)}h)`);
+        this.logger.debug(`updates service started, every ${Math.round(this.updateInterval / 3600000)}h`);
     }
 
     stop() {
@@ -59,42 +61,45 @@ class UpdatesService {
         this.logger.info('🛑 TVDB Updates service stopped');
     }
 
-    async checkForUpdates() {
+    checkForUpdates() {
+        return context.runInJob('updates', () => this.runUpdateCycle());
+    }
+
+    async runUpdateCycle() {
+        const startTime = Date.now();
         try {
-            this.logger.info('🔍 Checking TVDB for updates...');
-            const startTime = Date.now();
-            
+            this.logger.debug('🔍 checking TVDB for updates');
+
             const sinceTimestamp = Math.floor((this.lastUpdateTimestamp - (24 * 60 * 60 * 1000)) / 1000);
-            
             const response = await this.apiClient.makeRequest(`/updates?since=${sinceTimestamp}`);
-            
+
             if (!response.data || !Array.isArray(response.data)) {
-                this.logger.info('📭 No updates found or invalid response format');
+                this.logger.warn('updates check → no usable response');
                 return;
             }
 
             const updates = response.data;
-            const checkTime = Date.now() - startTime;
-            
-            this.logger.info(`📦 Found ${updates.length} updates from TVDB (${checkTime}ms)`);
-            
+            this.lastUpdateTimestamp = Date.now();
+
             if (updates.length === 0) {
-                this.logger.info('✅ No cache invalidation needed');
-                this.lastUpdateTimestamp = Date.now();
+                this.logger.event({
+                    level: 'info', marker: 'empty', ms: Date.now() - startTime,
+                    message: 'updates checked → nothing to invalidate'
+                });
                 return;
             }
 
-            const invalidationStats = await this.processUpdates(updates);
-            
-            this.lastUpdateTimestamp = Date.now();
-            
-            this.logger.info(`🧹 Cache invalidation completed:`, invalidationStats);
-            
+            const stats = await this.processUpdates(updates);
+
+            this.logger.event({
+                level: 'info', marker: 'ok', ms: Date.now() - startTime,
+                message: `cache invalidated → ${updates.length} fetched · ${stats.cacheEntriesInvalidated} invalidated · ${stats.unresolved} unresolved`
+            });
         } catch (error) {
-            this.logger.error('❌ Updates check failed:', error.message);
-            
+            this.logger.error(`updates check failed → ${error.message}`);
+
             if (error.response?.status === 401) {
-                this.logger.info('🔑 Authentication may need refresh');
+                this.logger.warn('authentication may need refresh');
             }
         }
     }
@@ -155,7 +160,7 @@ class UpdatesService {
         stats.cacheEntriesInvalidated = await this.applyInvalidation(prefixes);
 
         if (unhandled.size > 0) {
-            this.logger.warn(`⚠️ ${stats.unknownUpdated} updates had no matching entity type: ${[...unhandled].join(', ')}`);
+            this.logger.warn(`${stats.unknownUpdated} updates had no matching entity type: ${[...unhandled].join(', ')}`);
         }
 
         return stats;
@@ -187,7 +192,7 @@ class UpdatesService {
         if (Object.keys(byType).length === 0) return 0;
 
         if (typeof this.cacheService.invalidateByPrefixes !== 'function') {
-            this.logger.warn('⚠️ Cache service cannot invalidate by prefix, skipping');
+            this.logger.warn('Cache service cannot invalidate by prefix, skipping');
             return 0;
         }
         return await this.cacheService.invalidateByPrefixes(byType);

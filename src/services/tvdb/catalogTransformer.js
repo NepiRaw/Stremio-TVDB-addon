@@ -6,7 +6,17 @@
 
 const { hasValidImdbId, hasValidPoster, isUsableImage, extractImdbId } = require('../../utils/imdbFilter');
 
+const { context } = require('../../utils/logger');
+
 class CatalogTransformer {
+    trace(message, started) {
+        if (this.logger?.event) {
+            this.logger.event({ level: 'debug', ms: Date.now() - started, message });
+        } else {
+            this.logger?.debug?.(message);
+        }
+    }
+
     constructor(contentFetcher, translationService, artworkHandler, cacheService, logger) {
         this.contentFetcher = contentFetcher;
         this.translationService = translationService;
@@ -18,16 +28,26 @@ class CatalogTransformer {
     transformSearchResults(results, type, userLanguage = null) {
         if (!Array.isArray(results)) return [];
 
-        const metas = results
-            .filter(item => {
-                if (type === 'movie' && item.type !== 'movie') return false;
-                if (type === 'series' && item.type !== 'series') return false;
-                return Boolean(item.id && item.name);
-            })
-            .filter(item => hasValidImdbId(item) && hasValidPoster(item))
-            .map(item => this.buildMetaFromSearchItem(item, userLanguage));
+        const ofType = results.filter(item => {
+            if (type === 'movie' && item.type !== 'movie') return false;
+            if (type === 'series' && item.type !== 'series') return false;
+            return Boolean(item.id && item.name);
+        });
 
-        this.logger?.debug?.(`Search transform: ${results.length} results to ${metas.length} metas, 0 TVDB calls`);
+        // A dropped row is the first thing anyone asks about a search result, so name the reason.
+        const dropped = { 'wrong type': results.length - ofType.length, 'no imdb id': 0, 'no poster': 0 };
+        const kept = ofType.filter(item => {
+            const reason = !hasValidImdbId(item) ? 'no imdb id' : !hasValidPoster(item) ? 'no poster' : null;
+            if (!reason) return true;
+            dropped[reason]++;
+            this.logger?.trace?.(`dropped "${item.name}" (${item.id}) · ${reason}`);
+            return false;
+        });
+
+        const metas = kept.map(item => this.buildMetaFromSearchItem(item, userLanguage));
+        const reasons = Object.entries(dropped).filter(([, n]) => n > 0).map(([reason, n]) => `${reason} ${n}`);
+        const summary = reasons.length ? ` · dropped ${reasons.join(', ')}` : '';
+        this.logger?.debug?.(`rows ${results.length} → ${metas.length} from the search payload${summary}`);
         return metas;
     }
 
@@ -86,9 +106,11 @@ class CatalogTransformer {
         const tvdbLanguage = this.translationService.mapToTvdbLanguage(userLanguage || 'eng');
         const started = Date.now();
 
+        context.beginBatch();
         await Promise.all(metas.map(meta => this.applyLocalisedPoster(meta, type, tvdbLanguage)));
+        context.endBatch();
 
-        this.logger?.debug?.(`Poster upgrade: ${metas.length} rows in ${Date.now() - started}ms (${tvdbLanguage})`);
+        this.trace(`poster upgrade ${tvdbLanguage} → ${metas.length} rows`, started);
         return metas;
     }
 

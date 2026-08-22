@@ -1,4 +1,4 @@
-const { logger } = require('../utils/logger');
+const { context } = require('../utils/logger');
 
 /**
  * Extract TVDB language code from URL parameter (e.g., /fra/catalog/...)
@@ -18,7 +18,16 @@ function getLanguagePreference(req) {
  * Handle catalog requests - provides search-based catalog results
  * Route: /catalog/:type/:id/:extra?.json
  */
-async function catalogHandler(req, res, tvdbService, logger = null) {
+const CACHED = 'from cache';
+
+function describeCalls() {
+    const calls = context.current()?.calls ?? 0;
+    if (calls === 0) return CACHED;
+    return `${calls} call${calls === 1 ? '' : 's'}`;
+}
+
+async function catalogHandler(req, res, tvdbService, rootLogger = null) {
+    const logger = rootLogger?.child ? rootLogger.child('SEARCH') : rootLogger;
     const startTime = Date.now();
     try {
         const { type, id, extra } = req.params;
@@ -40,20 +49,20 @@ async function catalogHandler(req, res, tvdbService, logger = null) {
             return res.json({ metas: [] });
         }
         const userLanguage = getLanguagePreference(req);
-        logger?.debug(`🔍 Searching ${type} for: "${extraParams.search}" (language: ${userLanguage})`);
-        const searchStart = Date.now();
+        context.begin({ category: 'SEARCH', subject: `${type} "${extraParams.search}" ${userLanguage}` });
+
         const searchResults = await tvdbService.search(extraParams.search, type, 20, userLanguage);
-        const searchTime = Date.now() - searchStart;
-        logger?.debug(`Search API call completed in ${searchTime}ms`);
-        const transformStart = Date.now();
         const metas = await tvdbService.transformSearchResults(searchResults, type, userLanguage);
-        const transformTime = Date.now() - transformStart;
-        const totalTime = Date.now() - startTime;
-        logger?.debug(`Transform completed in ${transformTime}ms (Total: ${totalTime}ms, Results: ${metas.length})`);
+
+        const via = describeCalls();
+        context.note({
+            marker: metas.length ? (via === CACHED ? 'cache' : 'ok') : 'empty',
+            outcome: metas.length ? `${metas.length} results · ${via}` : `no results · ${via}`
+        });
         res.json({ metas });
     } catch (error) {
-        const totalTime = Date.now() - startTime;
-        logger?.error(`Catalog handler error after ${totalTime}ms:`, error);
+        context.note({ outcome: `failed → ${error.message}`, marker: 'error' });
+        logger?.error(`catalog failed after ${Date.now() - startTime}ms → ${error.message}`);
         res.json({ metas: [] });
     }
 }

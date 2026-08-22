@@ -95,11 +95,11 @@ function filterByImdbRequirement(searchResults) {
         const hasImdb = hasValidImdbId(item);
         const hasPoster = hasValidPoster(item);
         if (!hasImdb && !hasPoster) {
-            logger.info(`🚫 Filtering out "${item.name}" (${item.id}) - No IMDB ID or poster`);
+            logger.debug(`🚫 Filtering out "${item.name}" (${item.id}) - No IMDB ID or poster`);
         } else if (!hasImdb) {
-            logger.info(`🚫 Filtering out "${item.name}" (${item.id}) - No IMDB ID`);
+            logger.debug(`🚫 Filtering out "${item.name}" (${item.id}) - No IMDB ID`);
         } else if (!hasPoster) {
-            logger.info(`🚫 Filtering out "${item.name}" (${item.id}) - No poster artwork`);
+            logger.debug(`🚫 Filtering out "${item.name}" (${item.id}) - No poster artwork`);
         }
         return hasImdb && hasPoster;
     });
@@ -121,11 +121,11 @@ function filterDetailedByImdbRequirement(detailedItems) {
         const hasImdb = hasValidImdbId(item);
         const hasPoster = hasValidPoster(item);
         if (!hasImdb && !hasPoster) {
-            logger.info(`🚫 Filtering out detailed item "${item.name}" - No IMDB ID or poster`);
+            logger.debug(`🚫 Filtering out detailed item "${item.name}" - No IMDB ID or poster`);
         } else if (!hasImdb) {
-            logger.info(`🚫 Filtering out detailed item "${item.name}" - No IMDB ID for stream compatibility`);
+            logger.debug(`🚫 Filtering out detailed item "${item.name}" - No IMDB ID for stream compatibility`);
         } else if (!hasPoster) {
-            logger.info(`🚫 Filtering out detailed item "${item.name}" - No poster for visual quality`);
+            logger.debug(`🚫 Filtering out detailed item "${item.name}" - No poster for visual quality`);
         }
         return hasImdb && hasPoster;
     });
@@ -133,19 +133,19 @@ function filterDetailedByImdbRequirement(detailedItems) {
 
 function validateImdbRequirement(item, itemType = 'content') {
     if (!item) {
-        logger.info(`⚠️ Cannot validate null ${itemType}`);
+        logger.warn(`⚠️ Cannot validate null ${itemType}`);
         return false;
     }
     const hasImdb = hasValidImdbId(item);
     const hasPoster = hasValidPoster(item);
     if (!hasImdb && !hasPoster) {
-        logger.info(`🚫 Rejecting ${itemType} "${item.name}" - No IMDB ID or poster, poor quality metadata`);
+        logger.debug(`🚫 Rejecting ${itemType} "${item.name}" - No IMDB ID or poster, poor quality metadata`);
         return false;
     } else if (!hasImdb) {
-        logger.info(`🚫 Rejecting ${itemType} "${item.name}" - No IMDB ID, streams won't be available`);
+        logger.debug(`🚫 Rejecting ${itemType} "${item.name}" - No IMDB ID, streams won't be available`);
         return false;
     } else if (!hasPoster) {
-        logger.info(`🚫 Rejecting ${itemType} "${item.name}" - No poster, poor visual presentation`);
+        logger.debug(`🚫 Rejecting ${itemType} "${item.name}" - No poster, poor visual presentation`);
         return false;
     }
     const imdbId = extractImdbId(item);

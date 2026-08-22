@@ -29,7 +29,23 @@ class CacheService {
         this.startCleanupInterval();
     }
 
+    // A cache line reports the tier it answered from and what the lookup cost.
+    trace(marker, started, message) {
+        if (this.logger?.event) {
+            this.logger.event({ level: 'debug', marker, ms: Date.now() - started, message });
+        } else {
+            this.logger?.debug?.(message);
+        }
+    }
+
+    // A cached empty answer is the dangerous kind, so it is the one worth seeing written.
+    traceWrite(started, key, data, ttl) {
+        const empty = data === null || data === undefined || (Array.isArray(data) && data.length === 0);
+        if (empty) this.trace('none', started, `write empty · ${key} · ttl ${Math.round(ttl / 60000)}min`);
+    }
+
     getCachedData(cacheTypeOrMap, key) {
+        const started = Date.now();
         const cacheMap = this.getCacheMap(cacheTypeOrMap);
         if (!cacheMap) {
             this.logger?.warn?.(`Unknown cache type: ${cacheTypeOrMap}`);
@@ -37,19 +53,16 @@ class CacheService {
         }
 
         const cached = cacheMap.get(key);
-        const now = Date.now();
-        if (cached) {
-            this.logger?.debug(`⏱️ Checking cache for key: ${key} | now: ${now} | expiry: ${cached.expiry} | ttl(ms) left: ${cached.expiry - now}`);
-        }
-        if (cached && now < cached.expiry) {
-            this.logger?.debug(`💾 Cache:HIT: ${key}`);
+        if (cached && started < cached.expiry) {
+            this.trace('cache', started, `hit L1 · ${key}`);
             return cached.data;
         }
         if (cached) {
-            this.logger?.debug(`🗑️ Cache EXPIRED: ${key} | now: ${now} | expiry: ${cached.expiry}`);
             cacheMap.delete(key);
+            this.trace('none', started, `miss L1, expired · ${key}`);
+            return null;
         }
-        this.logger?.debug(`🔍 Cache:MISS: ${key}`);
+        this.trace('none', started, `miss L1 · ${key}`);
         return null;
     }
 
@@ -60,16 +73,16 @@ class CacheService {
             return;
         }
 
-        const now = Date.now();
-        const expiry = now + ttl;
+        const started = Date.now();
+        const expiry = started + ttl;
         const entry = {
             data: data,
             expiry: expiry,
-            timestamp: now,
+            timestamp: started,
             type: this.getCacheTypeFromKey(key)
         };
         cacheMap.set(key, entry);
-        this.logger?.debug(`💾 Cached data: ${key} | now: ${now} | expiry: ${expiry} | ttl(ms): ${ttl} | ttl(min): ${Math.round(ttl / 60000)}`);
+        this.traceWrite(started, key, data, ttl);
     }
 
     getCacheTypeFromKey(key) {
@@ -325,7 +338,7 @@ class CacheService {
 
     startCleanupInterval() {
         setInterval(() => this.cleanup(), 5 * 60 * 1000).unref();
-        this.logger?.info('🕐 Enhanced cache cleanup interval started (5 minutes)');
+        this.logger?.debug?.('cache cleanup timer started, every 5 minutes');
     }
 }
 

@@ -393,17 +393,11 @@ class CatalogConfig {
         const currentMode = this.getCurrentMode();
         const apiValidation = currentMode.apiKeyStatus;
 
-        logger.info?.('🏭 Catalog Configuration Status:');
-        logger.info?.(`   Mode: ${currentMode.name} (${currentMode.id})`);
-        logger.info?.(`   Features: ${currentMode.features.join(', ')}`);
-        
-        envValidator.logValidationResults(apiValidation, logger);
+        const served = this.getManifestCatalogs();
+        logger.info?.(`🏭 Mode: ${currentMode.name} (${currentMode.id}) · ${currentMode.features.join(', ')} · ${served.length} catalogs`);
+        served.forEach(catalog => logger.debug?.(`   - ${catalog.name} (${catalog.type})`));
 
-        const availableCatalogs = this.getAvailableCatalogs();
-        logger.info?.(`📚 Available Catalogs: ${availableCatalogs.length}`);
-        availableCatalogs.forEach(catalog => {
-            logger.debug?.(`   - ${catalog.name} (${catalog.type})`);
-        });
+        envValidator.logValidationResults(apiValidation, logger);
     }
 }
 

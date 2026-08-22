@@ -7,6 +7,7 @@ const MetadataTransformer = require('./tvdb/metadataTransformer');
 const UpdatesService = require('./tvdb/updatesService');
 const { getEnhancedReleaseInfo } = require('../utils/theatricalStatus');
 const { rankSearchResults } = require('../utils/searchRanking');
+const { context } = require('../utils/logger');
 
 class TVDBService {
     constructor(cacheService, ratingService = null, logger = null) {
@@ -34,31 +35,33 @@ class TVDBService {
             headers: { 'Accept': 'application/json' }
         });
 
-        this.contentFetcher = new ContentFetcher(this, this.cacheService, this.logger);
-        this.translationService = new TranslationService(this, this.cacheService, this.logger);
-        this.artworkHandler = new ArtworkHandler(this, this.cacheService, this.logger);
-        this.catalogTransformer = new CatalogTransformer(this.contentFetcher, this.translationService, this.artworkHandler, this.cacheService, this.logger);
+        const at = category => this.logger.child ? this.logger.child(category) : this.logger;
+        this.metaLogger = at('META');
+        this.tvdbLogger = at('TVDB');
+
+        this.contentFetcher = new ContentFetcher(this, this.cacheService, at('TVDB'));
+        this.translationService = new TranslationService(this, this.cacheService, at('TVDB'));
+        this.artworkHandler = new ArtworkHandler(this, this.cacheService, at('TVDB'));
+        this.catalogTransformer = new CatalogTransformer(this.contentFetcher, this.translationService, this.artworkHandler, this.cacheService, at('SEARCH'));
         this.metadataTransformer = new MetadataTransformer(
-            this.contentFetcher, 
-            this.translationService, 
+            this.contentFetcher,
+            this.translationService,
             this.artworkHandler,
-            this.logger
+            at('META')
         );
-        
-        this.updatesService = new UpdatesService(this, this.cacheService, this.logger);
+
+        this.updatesService = new UpdatesService(this, this.cacheService, at('UPDATES'));
     }
 
     /**
      * Start the TVDB service including updates monitoring
      */
     async start() {
-        this.logger.info('🚀 Starting TVDB service...');
-        
         await this.ensureValidToken();
         
         this.updatesService.start();
         
-        this.logger.info('✅ TVDB service started with updates monitoring');
+        this.logger.info(`✅ TVDB authenticated, updates every ${Math.round(this.updatesService.updateInterval / 3600000)}h`);
     }
 
     stop() {
@@ -76,10 +79,10 @@ class TVDBService {
             this.token = response.data.data.token;
             this.tokenExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000);
             
-            this.logger.info('✅ TVDB authentication successful');
+            this.tvdbLogger.debug('authenticated with TVDB');
             return this.token;
         } catch (error) {
-            this.logger.error('❌ TVDB authentication failed:', error.response?.data || error.message);
+            this.tvdbLogger.error(`TVDB authentication failed → ${error.response?.data?.message || error.message}`);
             throw new Error('Failed to authenticate with TVDB API');
         }
     }
@@ -91,36 +94,54 @@ class TVDBService {
         return this.token;
     }
 
+    traceCall(endpoint, params, outcome, started) {
+        const query = Object.entries(params).map(([k, v]) => `${k}=${v}`).join('&');
+        const message = `GET ${endpoint}${query ? `?${query}` : ''} → ${outcome}`;
+        if (this.tvdbLogger.event) {
+            this.tvdbLogger.event({ level: 'debug', ms: Date.now() - started, message });
+        } else {
+            this.tvdbLogger.debug(message);
+        }
+    }
+
     async makeRequest(endpoint, params = {}) {
         await this.ensureValidToken();
+        context.countCall();
+        const started = Date.now();
+
+        const send = () => this.http.get(`${this.baseURL}${endpoint}`, {
+            headers: {
+                'Authorization': `Bearer ${this.token}`,
+                'Accept': 'application/json'
+            },
+            params
+        });
 
         try {
-            const response = await this.http.get(`${this.baseURL}${endpoint}`, {
-                headers: {
-                    'Authorization': `Bearer ${this.token}`,
-                    'Accept': 'application/json'
-                },
-                params
-            });
-
+            const response = await send();
+            this.traceCall(endpoint, params, response.status, started);
             return response.data;
         } catch (error) {
             if (error.response?.status === 401) {
-                this.logger.info('🔄 Token expired, refreshing...');
+                this.tvdbLogger.info('🔄 Token expired, refreshing...');
                 await this.authenticate();
-                
-                const retryResponse = await this.http.get(`${this.baseURL}${endpoint}`, {
-                    headers: {
-                        'Authorization': `Bearer ${this.token}`,
-                        'Accept': 'application/json'
-                    },
-                    params
-                });
-                
+
+                const retryResponse = await send();
+                this.traceCall(endpoint, params, `${retryResponse.status} after refresh`, started);
                 return retryResponse.data;
             }
-            
-            this.logger.error(`❌ TVDB API error for ${endpoint}:`, error.response?.data || error.message);
+
+            if (error.response?.status === 404) {
+                this.traceCall(endpoint, params, 404, started);
+            } else {
+                const detail = error.response?.data?.message || error.message;
+                const message = `TVDB API error for ${endpoint} → ${detail}`;
+                if (this.tvdbLogger.event) {
+                    this.tvdbLogger.event({ level: 'error', marker: 'error', ms: Date.now() - started, message });
+                } else {
+                    this.tvdbLogger.error(message);
+                }
+            }
             throw error;
         }
     }
@@ -258,7 +279,6 @@ class TVDBService {
         try {
             const cachedMeta = await this.cacheService.getCachedData('metadata', cacheKey);
             if (cachedMeta && !cachedMeta.notFound) {
-                this.logger.info(`✅ Enhanced metadata cache hit for ${item.name || itemId}`);
                 return cachedMeta;
             }
         } catch (error) {
@@ -273,7 +293,6 @@ class TVDBService {
         
         if (this.ratingService && meta && meta.imdb_id) {
             try {
-                this.logger.info(`🎬 Enriching ${meta.name} (${meta.imdb_id}) with IMDb ratings...`);
                 const ratingData = await this.ratingService.getImdbRating(meta.imdb_id, type);
                 if (ratingData && !ratingData.notFound) {
                     if (ratingData.imdb_rating) {
@@ -307,10 +326,10 @@ class TVDBService {
                         meta.external_ids = { ...meta.external_ids, ...ratingData.external_ids };
                     }
                 } else {
-                    this.logger.info(`ℹ️  No IMDb rating data found for ${meta.imdb_id}`);
+                    this.metaLogger.debug(`ℹ️  No IMDb rating data found for ${meta.imdb_id}`);
                 }
             } catch (error) {
-                this.logger.error(`❌ Failed to enrich metadata with IMDb ratings for ${meta.imdb_id}:`, error.message);
+                this.logger.error(`failed to enrich ratings for ${meta.imdb_id} → ${error.message}`);
             }
         }
         
@@ -318,7 +337,6 @@ class TVDBService {
         const TTL = 24 * 60 * 60 * 1000; // 24 hours in ms
         try {
             await this.cacheService.setCachedData('metadata', cacheKey, meta, TTL);
-            this.logger.info(`📦 Cached enhanced metadata for ${meta.name || itemId} (24h TTL)`);
         } catch (error) {
             this.logger.error(`Failed to cache enhanced metadata: ${error.message}`);
         }

@@ -3,7 +3,7 @@
  * Handles poster, background, and logo selection for movies and series
  */
 
-const { isTransportError } = require('../../utils/errorHandler');
+const { isTransportError, reportUpstreamError } = require('../../utils/errorHandler');
 
 class ArtworkHandler {
     constructor(apiClient, cacheService, logger) {
@@ -17,7 +17,6 @@ class ArtworkHandler {
             const cacheKey = `${entityType}:${entityId}:${language}`;
             const cachedArtwork = await this.cacheService.getArtwork(entityType, entityId, language);
             if (cachedArtwork) {
-                this.logger?.debug?.(`Artwork cache HIT for ${entityType} ${entityId}`);
                 return cachedArtwork;
             }
 
@@ -42,10 +41,9 @@ class ArtworkHandler {
             result.logo = this.selectBestClearlogo(artworks, language);
             
             await this.cacheService.setArtwork(entityType, entityId, language, result);
-            this.logger?.debug?.(`Cached artwork for ${entityType} ${entityId}`);
             return result;
         } catch (error) {
-            this.logger?.error?.(`Artwork fetch error for ${entityType} ${entityId}:`, error.message);
+            reportUpstreamError(this.logger, `artwork for ${entityType} ${entityId}`, error);
             const result = { poster: null, background: null, logo: null };
             if (!isTransportError(error)) {
                 await this.cacheService.setArtwork(entityType, entityId, language, result);

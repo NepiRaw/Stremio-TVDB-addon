@@ -122,8 +122,6 @@ class EnvValidator {
     logValidationResults(validation, logger = console) {
         const { configured, missing, placeholders, summary } = validation;
 
-        logger.info?.(`🔍 Environment Variables Validation:`);
-        logger.info?.(`   Total: ${summary.total}, Configured: ${summary.configured}, Missing: ${summary.missing}, Placeholders: ${summary.placeholders}`);
 
         if (missing.length > 0) {
             logger.warn?.(`⚠️  Missing variables: ${missing.join(', ')}`);
@@ -133,9 +131,7 @@ class EnvValidator {
             logger.warn?.(`🏷️  Placeholder values detected: ${placeholders.join(', ')}`);
         }
 
-        if (summary.configured === summary.total) {
-            logger.info?.(`✅ All environment variables are properly configured`);
-        }
+        logger.info?.(`${summary.configured === summary.total ? '✅' : '⚠️ '} Environment variables: ${summary.configured} of ${summary.total} configured`);
     }
 }
 

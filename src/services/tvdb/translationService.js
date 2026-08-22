@@ -31,7 +31,6 @@ class TranslationService {
         try {
             const cachedTranslation = await this.cacheService.getTranslation(entityType, entityId, tvdbLanguage, 'full');
             if (cachedTranslation) {
-                this.logger.debug(`💾 Translation cache HIT for ${entityType} ${entityId} (${tvdbLanguage})`);
                 return cachedTranslation;
             }
 
@@ -41,13 +40,13 @@ class TranslationService {
 
             await this.cacheService.setTranslation(entityType, entityId, tvdbLanguage, 'full', translationData);
             
-            if (translationData) {
-                this.logger.debug(`🌍 Cached translation for ${entityType} ${entityId} (${tvdbLanguage})`);
-            }
-
             return translationData;
         } catch (error) {
-            this.logger.error(`Translation fetch error for ${entityType} ${entityId} in ${tvdbLanguage}:`, error.message);
+            if (error.response?.status === 404) {
+                this.logger.debug(`no ${tvdbLanguage} translation for ${entityType} ${entityId}, falling back`);
+            } else {
+                this.logger.error(`Translation fetch error for ${entityType} ${entityId} in ${tvdbLanguage}: ${error.message}`);
+            }
             if (!isTransportError(error)) {
                 await this.cacheService.setTranslation(entityType, entityId, tvdbLanguage, 'full', null);
             }
@@ -67,7 +66,7 @@ class TranslationService {
     async _fetchAllEpisodeTranslations(seriesId, language) {
         try {
             const allEpisodes = await fetchAllEpisodePages(this.apiClient, `/series/${seriesId}/episodes/default/${language}`);
-            this.logger.debug(`... fetched ${allEpisodes.length} episode translations for ${language} for series ${seriesId}`);
+            this.logger.debug(`episode translations ${language} → ${allEpisodes.length}`);
             return { episodes: allEpisodes.length > 0 ? allEpisodes : null, unanswered: false };
         } catch (error) {
             this.logger.warn(`Failed to fetch episode translations for series ${seriesId} (${language}):`, error.message);
@@ -81,20 +80,16 @@ class TranslationService {
         
         const cachedTranslations = await this.cacheService.getTranslation('series', seriesId, tvdbLanguage, 'bulk-episodes');
         if (cachedTranslations) {
-            this.logger.debug(`💾 Bulk translations cache HIT for series ${seriesId} (${tvdbLanguage})`);
             return cachedTranslations;
         }
 
         try {
-            this.logger.info(`🌍 Fetching all pages of episode translations for series ${seriesId} (${tvdbLanguage})...`);
-
             if (tvdbLanguage === 'eng') {
                 const english = await this._fetchAllEpisodeTranslations(seriesId, 'eng');
                 translations.primary = english.episodes;
                 translations.fallback = english.episodes;
                 unanswered = english.unanswered;
             } else {
-                this.logger.info(`🌍 Fetching English fallback episode translations for series ${seriesId}...`);
                 const [primary, fallback] = await Promise.all([
                     this._fetchAllEpisodeTranslations(seriesId, tvdbLanguage),
                     this._fetchAllEpisodeTranslations(seriesId, 'eng')
@@ -105,11 +100,11 @@ class TranslationService {
             }
 
             if (!translations.primary && tvdbLanguage !== 'eng' && translations.fallback) {
-                this.logger.warn(`⚠️ Primary language '${tvdbLanguage}' failed, using 'eng' as primary.`);
+                this.logger.warn(`Primary language '${tvdbLanguage}' failed, using 'eng' as primary.`);
                 translations.primary = translations.fallback;
             }
         } catch (error) {
-            this.logger.warn(`⚠️ An unexpected error occurred during bulk episode translation fetching: ${error.message}`);
+            this.logger.warn(`An unexpected error occurred during bulk episode translation fetching: ${error.message}`);
         }
         
         if (!unanswered) {

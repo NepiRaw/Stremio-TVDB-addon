@@ -1,5 +1,6 @@
 const axios = require('axios');
-const { logger } = require('../utils/logger');
+const { logger: rootLogger } = require('../utils/logger');
+const logger = rootLogger.child ? rootLogger.child('RATING') : rootLogger;
 const { isTransportError } = require('../utils/errorHandler');
 class RatingService {
     constructor(cacheService, omdbApiKey = null) {
@@ -10,7 +11,6 @@ class RatingService {
         this.rateLimitHit = false;
         this.rateLimitResetTime = null;
         
-        logger.info(`RatingService initialized with OMDB: ${omdbApiKey ? 'enabled' : 'disabled'}, fallback: Cinemeta`);
     }
 
     /**
@@ -33,7 +33,7 @@ class RatingService {
         
         for (let attempt = 0; attempt < 3; attempt++) {
             try {
-                logger.debug(`OMDB attempt ${attempt + 1} for ${imdbId}`);
+                if (attempt > 0) logger.debug(`omdb retry ${attempt + 1} for ${imdbId}`);
                 
                 const response = await axios.get(url, {
                     timeout: 10000,
@@ -62,7 +62,7 @@ class RatingService {
                         fetched_at: new Date().toISOString()
                     };
                     
-                    logger.debug(`OMDB rating fetched for ${imdbId}: ${ratingData.imdb_rating}/10`);
+                    logger.debug(`omdb ${imdbId} → ${ratingData.imdb_rating}/10`);
                     return { data: ratingData, unanswered: false };
                 } else {
                     logger.debug(`OMDB API error for ${imdbId}: ${data.Error}`);
@@ -191,7 +191,6 @@ class RatingService {
         
         if (ratingData) {
             await this.cacheService.setCachedData('metadata', cacheKey, ratingData, TTL);
-            logger.debug(`Cached rating for ${imdbId}: ${ratingData.imdb_rating}/10 (source: ${ratingData.source})`);
             
             if (ratingData.external_ids) {
                 await this.cacheExternalIds(ratingData.external_ids, imdbId, 30 * 24 * 60 * 60 * 1000); // 30 days
@@ -284,7 +283,6 @@ class RatingService {
         
         try {
             await this.cacheService.setCachedData('metadata', cacheKey, externalIds, ttl);
-            logger.debug(`Cached external IDs for ${primaryId}: ${Object.keys(externalIds).join(', ')}`);
         } catch (error) {
             logger.error(`Failed to cache external IDs for ${primaryId}: ${error.message}`);
         }
