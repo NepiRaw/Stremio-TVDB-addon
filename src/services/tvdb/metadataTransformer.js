@@ -109,60 +109,24 @@ class MetadataTransformer {
     }
 
     async applyArtwork(meta, stremioType, numericId, tvdbLanguage, item) {
-        const artwork = await this.artworkHandler.getArtwork(
-            stremioType === 'movie' ? 'movies' : 'series', 
-            numericId, 
-            tvdbLanguage
-        );
-        
-        if (artwork.poster) {
-            meta.poster = artwork.poster;
-        }
-        
-        if (artwork.background) {
-            meta.background = artwork.background;
-        }
-        
-        if (artwork.logo) {
-            meta.logo = artwork.logo;
-        }
-        
-        // Try English fallback for missing artwork if preferred language wasn't English
-        if ((!artwork.poster || !artwork.background || !artwork.logo) && tvdbLanguage !== 'eng') {
-            const englishArtwork = await this.artworkHandler.getArtwork(
-                stremioType === 'movie' ? 'movies' : 'series', 
-                numericId, 
-                'eng'
+        if (stremioType !== 'movie') {
+            const { primary, english } = await this.artworkHandler.getArtworkPair(
+                'series',
+                numericId,
+                tvdbLanguage
             );
-            
-            if (!meta.poster && englishArtwork.poster) {
-                meta.poster = englishArtwork.poster;
-            }
-            
-            if (!meta.background && englishArtwork.background) {
-                meta.background = englishArtwork.background;
-            }
-            
-            if (!meta.logo && englishArtwork.logo) {
-                meta.logo = englishArtwork.logo;
-            }
+
+            meta.poster = primary.poster || english.poster || meta.poster;
+            meta.background = primary.background || english.background || meta.background;
+            meta.logo = primary.logo || english.logo || meta.logo;
         }
-        
-        // Apply final fallbacks if still no artwork
+
         if (!meta.poster || !meta.background || !meta.logo) {
             const { posterSources, backgroundSources, logoSources } = this.artworkHandler.getArtworkFallbacks(item, stremioType, tvdbLanguage);
-            
-            if (!meta.poster && posterSources.length > 0) {
-                meta.poster = posterSources[0];
-            }
-            
-            if (!meta.background && backgroundSources.length > 0) {
-                meta.background = backgroundSources[0];
-            }
-            
-            if (!meta.logo && logoSources.length > 0) {
-                meta.logo = logoSources[0];
-            }
+
+            if (!meta.poster && posterSources.length > 0) meta.poster = posterSources[0];
+            if (!meta.background && backgroundSources.length > 0) meta.background = backgroundSources[0];
+            if (!meta.logo && logoSources.length > 0) meta.logo = logoSources[0];
         }
     }
 
@@ -314,7 +278,14 @@ class MetadataTransformer {
             });
 
         // Take top 5 most important actors - Can be adjusted
+        const seen = new Set();
         const topActors = validActors
+            .filter(c => {
+                const person = c.peopleId ?? c.people?.id ?? (c.people?.name || c.personName);
+                if (seen.has(person)) return false;
+                seen.add(person);
+                return true;
+            })
             .slice(0, 5)
             .map(c => c.people?.name || c.personName);
 

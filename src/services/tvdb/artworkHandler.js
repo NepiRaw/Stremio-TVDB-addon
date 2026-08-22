@@ -12,6 +12,45 @@ class ArtworkHandler {
         this.logger = logger;
     }
 
+    /**
+     * Both languages a meta request needs, from a single fetch. 
+     * Only the two selections are cached.
+     */
+    async getArtworkPair(entityType, entityId, language = 'eng') {
+        const empty = () => ({ poster: null, background: null, logo: null });
+        const cachedPrimary = await this.cacheService.getArtwork(entityType, entityId, language);
+        const cachedEnglish = language === 'eng'
+            ? cachedPrimary
+            : await this.cacheService.getArtwork(entityType, entityId, 'eng');
+
+        if (cachedPrimary && cachedEnglish) return { primary: cachedPrimary, english: cachedEnglish };
+        if (entityType === 'movies' || entityType === 'movie') return { primary: empty(), english: empty() };
+
+        let artworks = [];
+        try {
+            const response = await this.apiClient.makeRequest(`/series/${entityId}/artworks`);
+            artworks = response?.data?.artworks || [];
+        } catch (error) {
+            reportUpstreamError(this.logger, `artwork for ${entityType} ${entityId}`, error);
+            return { primary: cachedPrimary || empty(), english: cachedEnglish || empty() };
+        }
+
+        const select = lang => {
+            if (artworks.length === 0) return empty();
+            const result = this.selectOptimalArtwork(artworks, lang);
+            result.logo = this.selectBestClearlogo(artworks, lang);
+            return result;
+        };
+
+        const primary = cachedPrimary || select(language);
+        const english = language === 'eng' ? primary : (cachedEnglish || select('eng'));
+
+        if (!cachedPrimary) await this.cacheService.setArtwork(entityType, entityId, language, primary);
+        if (!cachedEnglish && language !== 'eng') await this.cacheService.setArtwork(entityType, entityId, 'eng', english);
+
+        return { primary, english };
+    }
+
     async getArtwork(entityType, entityId, language = 'eng') {
         try {
             const cacheKey = `${entityType}:${entityId}:${language}`;

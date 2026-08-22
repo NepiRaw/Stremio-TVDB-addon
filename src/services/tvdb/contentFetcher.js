@@ -21,20 +21,24 @@ class ContentFetcher {
             }
 
             const endpoint = contentType === 'movie' ? 'movies' : 'series';
-            const [basicResult, extendedResult] = await Promise.allSettled([
-                this.apiClient.makeRequest(`/${endpoint}/${numericId}`),
-                this.apiClient.makeRequest(`/${endpoint}/${numericId}/extended`)
-            ]);
-            const basic = basicResult.status === 'fulfilled' ? basicResult.value : null;
-            const extended = extendedResult.status === 'fulfilled' ? extendedResult.value : null;
-            const result = extended?.data || basic?.data || null;
-            const unanswered = [basicResult, extendedResult]
-                .some(outcome => outcome.status === 'rejected' && isTransportError(outcome.reason));
+            let result = null;
+            let unanswered = false;
+
+            try {
+                result = (await this.apiClient.makeRequest(`/${endpoint}/${numericId}/extended`))?.data || null;
+            } catch (error) {
+                unanswered = isTransportError(error);
+                if (!unanswered) {
+                    try {
+                        result = (await this.apiClient.makeRequest(`/${endpoint}/${numericId}`))?.data || null;
+                    } catch (fallbackError) {
+                        unanswered = isTransportError(fallbackError);
+                    }
+                }
+            }
 
             if (result || !unanswered) {
                 await this.cacheService.setMetadata(contentType, numericId, null, result);
-            }
-            if (result) {
             }
             return result;
         } catch (error) {

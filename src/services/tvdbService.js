@@ -88,9 +88,12 @@ class TVDBService {
     }
 
     async ensureValidToken() {
-        if (!this.token || !this.tokenExpiry || new Date() >= this.tokenExpiry) {
-            await this.authenticate();
+        if (this.token && this.tokenExpiry && new Date() < this.tokenExpiry) return this.token;
+
+        if (!this.authInFlight) {
+            this.authInFlight = this.authenticate().finally(() => { this.authInFlight = null; });
         }
+        await this.authInFlight;
         return this.token;
     }
 
