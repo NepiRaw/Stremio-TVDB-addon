@@ -89,38 +89,9 @@ app.get('/api/languages', (req, res) => {
     res.json(getLanguageOptions());
 });
 
-app.get('/api/catalog-defaults', (req, res) => {
-    const defaults = catalogConfig.getDefaultToggles();
-    res.json(defaults);
-});
-
 app.get('/api/app-config', (req, res) => {
     const appConfig = catalogConfig.getAppConfig(req);
     res.json(appConfig);
-});
-
-app.get('/api/config', (req, res) => {
-    const isTmdbConfigured = !!(process.env.TMDB_API_KEY && process.env.TMDB_API_KEY.trim() !== '');
-    
-    const userConfig = {
-        language: req.query.language || 'eng',
-        isTmdbConfigured: isTmdbConfigured,
-        enabledCatalogs: {
-            movies: ['tmdb-popular', 'tmdb-trending'],
-            series: ['tvdb-popular', 'tvdb-trending'],
-            anime: ['kitsu-trending', 'kitsu-popular']
-        },
-        preferences: {
-            showAdultContent: false,
-            preferredRegion: 'US',
-            maxResults: 20
-        }
-    };
-    res.json(userConfig);
-});
-
-app.post('/api/config', express.json(), (req, res) => {
-    res.json({ success: true, message: 'Configuration saved successfully' });
 });
 
 // Routes
