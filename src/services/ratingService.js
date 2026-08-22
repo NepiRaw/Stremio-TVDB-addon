@@ -1,15 +1,16 @@
 const axios = require('axios');
-const { logger } = require('../utils/logger');
+const { logger: rootLogger } = require('../utils/logger');
+const logger = rootLogger.child ? rootLogger.child('RATING') : rootLogger;
+const { isTransportError } = require('../utils/errorHandler');
 class RatingService {
     constructor(cacheService, omdbApiKey = null) {
         this.cacheService = cacheService;
         this.omdbApiKey = omdbApiKey;
         this.omdbBaseUrl = 'http://www.omdbapi.com';
-        this.imdbApiDevBaseUrl = 'https://api.imdbapi.dev';
+        this.cinemetaBaseUrl = 'https://v3-cinemeta.strem.io/meta';
         this.rateLimitHit = false;
         this.rateLimitResetTime = null;
         
-        logger.info(`RatingService initialized with OMDB: ${omdbApiKey ? 'enabled' : 'disabled'}, fallback: imdbapi.dev`);
     }
 
     /**
@@ -20,19 +21,19 @@ class RatingService {
     async getOMDbRating(imdbId) {
         if (!this.omdbApiKey) {
             logger.debug('OMDB API key not available, skipping OMDB');
-            return null;
+            return { data: null, unanswered: false };
         }
 
         if (this.rateLimitHit && this.rateLimitResetTime && new Date() < this.rateLimitResetTime) {
             logger.debug('OMDB rate limit still active, skipping');
-            return null;
+            return { data: null, unanswered: false };
         }
 
         const url = `${this.omdbBaseUrl}/?i=${imdbId}&apikey=${this.omdbApiKey}`;
         
         for (let attempt = 0; attempt < 3; attempt++) {
             try {
-                logger.debug(`OMDB attempt ${attempt + 1} for ${imdbId}`);
+                if (attempt > 0) logger.debug(`omdb retry ${attempt + 1} for ${imdbId}`);
                 
                 const response = await axios.get(url, {
                     timeout: 10000,
@@ -61,21 +62,25 @@ class RatingService {
                         fetched_at: new Date().toISOString()
                     };
                     
-                    logger.debug(`OMDB rating fetched for ${imdbId}: ${ratingData.imdb_rating}/10`);
-                    return ratingData;
+                    logger.debug(`omdb ${imdbId} → ${ratingData.imdb_rating}/10`);
+                    return { data: ratingData, unanswered: false };
                 } else {
                     logger.debug(`OMDB API error for ${imdbId}: ${data.Error}`);
-                    return null;
+                    return { data: null, unanswered: false };
                 }
             } catch (error) {
                 if (error.response?.status === 429) {
                     logger.warn('OMDB rate limit hit');
                     this.rateLimitHit = true;
                     this.rateLimitResetTime = new Date(Date.now() + 24 * 60 * 60 * 1000); // Reset after 24 hours
-                    return null;
+                    return { data: null, unanswered: false };
                 }
                 
                 logger.debug(`OMDB attempt ${attempt + 1} failed for ${imdbId}: ${error.message}`);
+                
+                if (!isTransportError(error)) {
+                    return { data: null, unanswered: false };
+                }
                 
                 if (attempt < 2) {
                     await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)));
@@ -84,86 +89,66 @@ class RatingService {
         }
         
         logger.error(`OMDB failed after 3 attempts for ${imdbId}`);
-        return null;
+        return { data: null, unanswered: true };
     }
 
     /**
-     * Fetches IMDb rating using imdbapi.dev as fallback
-     * @param {string} imdbId - The IMDb ID (e.g., 'tt0111161')
-     * @param {string} contentType - Either 'movie' or 'series' for search fallback
-     * @returns {Object|null} Rating data or null if not found/failed
+     * Fetches IMDb rating from Cinemeta. No API key, no quota.
      */
-    async getIMDbApiDevRating(imdbId, contentType = 'movie') {
-        const directUrl = `${this.imdbApiDevBaseUrl}/titles/${imdbId}`;
-        
+    async getCinemetaRating(imdbId, contentType = 'movie') {
+        const type = contentType === 'series' ? 'series' : 'movie';
+        const url = `${this.cinemetaBaseUrl}/${type}/${imdbId}.json`;
+
         try {
-            logger.debug(`IMDbAPI.dev direct lookup for ${imdbId}`);
-            
-            const response = await axios.get(directUrl, {
+            logger.debug(`Cinemeta lookup for ${imdbId}`);
+
+            const response = await axios.get(url, {
                 timeout: 10000,
                 headers: {
                     'User-Agent': 'Stremio-TVDB-Addon/1.0'
                 }
             });
 
-            const data = response.data;
-            
-            if (data.rating?.aggregateRating) {
-                const ratingData = {
-                    source: 'imdbapi.dev',
-                    imdb_rating: parseFloat(data.rating.aggregateRating),
-                    imdb_votes: data.rating.ratingCount || null,
-                    plot: data.plot || null,
-                    runtime: data.runtimeMinutes ? `${data.runtimeMinutes} min` : null,
-                    genre: data.genres?.join(', ') || null,
-                    director: data.directors?.map(d => d.name).join(', ') || null,
-                    fetched_at: new Date().toISOString()
-                };
-                
-                logger.debug(`IMDbAPI.dev rating fetched for ${imdbId}: ${ratingData.imdb_rating}/10`);
-                return ratingData;
+            const meta = response.data?.meta;
+            const rating = meta?.imdbRating ? parseFloat(meta.imdbRating) : null;
+
+            if (!rating || Number.isNaN(rating)) {
+                logger.debug(`No rating found via Cinemeta for ${imdbId}`);
+                return { data: null, unanswered: false };
             }
+
+            // Cinemeta returns genre and director as arrays; the enrichment splits them as strings.
+            const asString = value => Array.isArray(value) ? (value.join(', ') || null) : (value || null);
+
+            const ratingData = {
+                source: 'cinemeta',
+                imdb_rating: rating,
+                imdb_votes: null,
+                metascore: null,
+                rotten_tomatoes: null,
+                plot: meta.description || null,
+                runtime: meta.runtime || null,
+                genre: asString(meta.genres || meta.genre),
+                director: asString(meta.director),
+                awards: meta.awards || null,
+                external_ids: {
+                    ...(meta.imdb_id ? { imdb_id: meta.imdb_id } : {}),
+                    ...(meta.moviedb_id ? { tmdb_id: String(meta.moviedb_id) } : {}),
+                    ...(meta.tvdb_id ? { tvdb_id: String(meta.tvdb_id) } : {})
+                },
+                fetched_at: new Date().toISOString()
+            };
+
+            logger.debug(`Cinemeta rating fetched for ${imdbId}: ${rating}/10`);
+            return { data: ratingData, unanswered: false };
         } catch (error) {
-            logger.debug(`IMDbAPI.dev direct lookup failed for ${imdbId}: ${error.message}`);
+            logger.debug(`Cinemeta lookup failed for ${imdbId}: ${error.message}`);
+            return { data: null, unanswered: isTransportError(error) };
         }
-
-        try {
-            const searchType = contentType === 'series' ? 'TV_SERIES' : 'MOVIE';
-            const searchUrl = `${this.imdbApiDevBaseUrl}/v2/search/titles?query=${imdbId}&types=${searchType}`;
-            
-            logger.debug(`IMDbAPI.dev search fallback for ${imdbId}`);
-            
-            const searchResponse = await axios.get(searchUrl, {
-                timeout: 10000,
-                headers: {
-                    'User-Agent': 'Stremio-TVDB-Addon/1.0'
-                }
-            });
-
-            const searchData = searchResponse.data;
-            const result = searchData.titles?.find(title => title.id === imdbId);
-            
-            if (result?.rating?.aggregateRating) {
-                const ratingData = {
-                    source: 'imdbapi.dev',
-                    imdb_rating: parseFloat(result.rating.aggregateRating),
-                    imdb_votes: result.rating.ratingCount || null,
-                    fetched_at: new Date().toISOString()
-                };
-                
-                logger.debug(`IMDbAPI.dev search rating fetched for ${imdbId}: ${ratingData.imdb_rating}/10`);
-                return ratingData;
-            }
-        } catch (error) {
-            logger.debug(`IMDbAPI.dev search failed for ${imdbId}: ${error.message}`);
-        }
-
-        logger.debug(`No rating found via IMDbAPI.dev for ${imdbId}`);
-        return null;
     }
 
     /**
-     * Fetches IMDb rating data using OMDB (primary) or imdbapi.dev (fallback)
+     * Fetches IMDb rating data using OMDB (primary) or Cinemeta (fallback)
      * @param {string} imdbId - The IMDb ID (e.g., 'tt0111161')
      * @param {string} contentType - Either 'movie' or 'series'
      * @returns {Object|null} Rating data or null if not found
@@ -186,22 +171,31 @@ class RatingService {
             logger.error(`Cache error for rating: ${error.message}`);
         }
 
-        let ratingData = await this.getOMDbRating(imdbId);
-        
-        if (!ratingData) {
-            ratingData = await this.getIMDbApiDevRating(imdbId, contentType);
+        const omdb = await this.getOMDbRating(imdbId);
+        let ratingData = omdb.data;
+        let unanswered = omdb.unanswered;
+
+        // OMDB often answers with plot and runtime but no rating, so the gap is worth filling.
+        if (!ratingData || ratingData.imdb_rating === null) {
+            const cinemeta = await this.getCinemetaRating(imdbId, contentType);
+            unanswered = unanswered || cinemeta.unanswered;
+
+            if (cinemeta.data) {
+                ratingData = ratingData
+                    ? { ...ratingData, imdb_rating: cinemeta.data.imdb_rating, source: `${ratingData.source}+cinemeta` }
+                    : cinemeta.data;
+            }
         }
 
-        const TTL = ratingData ? (7 * 24 * 60 * 60) : (60 * 60); // 7 days for success, 1 hour for failure
+        const TTL = ratingData ? (7 * 24 * 60 * 60 * 1000) : (60 * 60 * 1000); // 7 days for success, 1 hour for failure
         
         if (ratingData) {
             await this.cacheService.setCachedData('metadata', cacheKey, ratingData, TTL);
-            logger.debug(`Cached rating for ${imdbId}: ${ratingData.imdb_rating}/10 (source: ${ratingData.source})`);
             
             if (ratingData.external_ids) {
-                await this.cacheExternalIds(ratingData.external_ids, imdbId, 30 * 24 * 60 * 60); // 30 days
+                await this.cacheExternalIds(ratingData.external_ids, imdbId, 30 * 24 * 60 * 60 * 1000); // 30 days
             }
-        } else {
+        } else if (!unanswered) {
             const emptyResult = { notFound: true };
             await this.cacheService.setCachedData('metadata', cacheKey, emptyResult, TTL);
             logger.debug(`Cached negative result for ${imdbId}`);
@@ -282,14 +276,13 @@ class RatingService {
      * @param {string} primaryId - Primary ID (IMDb ID)
      * @param {number} ttl - Time to live in seconds
      */
-    async cacheExternalIds(externalIds, primaryId, ttl = 30 * 24 * 60 * 60) { // 30 days default
+    async cacheExternalIds(externalIds, primaryId, ttl = 30 * 24 * 60 * 60 * 1000) { // 30 days default
         if (!externalIds || !primaryId) return;
         
         const cacheKey = `external_ids:${primaryId}`;
         
         try {
             await this.cacheService.setCachedData('metadata', cacheKey, externalIds, ttl);
-            logger.debug(`Cached external IDs for ${primaryId}: ${Object.keys(externalIds).join(', ')}`);
         } catch (error) {
             logger.error(`Failed to cache external IDs for ${primaryId}: ${error.message}`);
         }

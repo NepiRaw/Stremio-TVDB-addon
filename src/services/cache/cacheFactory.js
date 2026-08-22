@@ -8,32 +8,32 @@ const HybridCacheService = require('./hybridCacheService');
 
 class CacheFactory {
     static createCache(logger = null) {
+        const cacheLogger = logger?.child ? logger.child('CACHE') : logger;
         const cacheType = process.env.CACHE_TYPE || 'memory';
         const mongoUri = process.env.MONGODB_URI;
         
-        logger?.info(`🏭 Cache Factory: Initializing ${cacheType} cache`);
         
         switch (cacheType.toLowerCase()) {
             case 'hybrid':
                 if (!mongoUri) {
                     logger?.warn('⚠️  CACHE_TYPE=hybrid but no MONGODB_URI found, falling back to memory cache');
-                    return new InMemoryCacheService(logger);
+                    return new InMemoryCacheService(cacheLogger);
                 }
-                logger?.info('🔄 Creating hybrid cache (L1: Memory + L2: MongoDB)');
-                return new HybridCacheService(logger);
+                logger?.info('💾 Cache: hybrid (L1 memory + L2 MongoDB)');
+                return new HybridCacheService(cacheLogger);
                 
             case 'mongodb':
                 if (!mongoUri) {
                     logger?.warn('⚠️  CACHE_TYPE=mongodb but no MONGODB_URI found, falling back to memory cache');
-                    return new InMemoryCacheService(logger);
+                    return new InMemoryCacheService(cacheLogger);
                 }
-                logger?.info('🗄️  Creating MongoDB-only cache');
-                return new HybridCacheService(logger);
+                logger?.info('💾 Cache: MongoDB (L1 memory + L2 MongoDB)');
+                return new HybridCacheService(cacheLogger);
                 
             case 'memory':
             default:
-                logger?.info('💾 Creating in-memory cache');
-                return new InMemoryCacheService(logger);
+                logger?.info('💾 Cache: in-memory only');
+                return new InMemoryCacheService(cacheLogger);
         }
     }
     
@@ -56,17 +56,9 @@ class CacheFactory {
         const hasMongoUri = !!process.env.MONGODB_URI;
         const recommended = CacheFactory.getRecommendedCacheType();
         
-        console.log('\n📊 Cache Configuration:');
-        console.log('═══════════════════════');
-        console.log(`Environment: ${nodeEnv}`);
-        console.log(`Cache Type: ${cacheType}`);
-        console.log(`MongoDB Available: ${hasMongoUri ? '✅' : '❌'}`);
-        console.log(`Recommended: ${recommended}`);
-        
         if (cacheType !== recommended) {
-            console.log(`💡 Recommendation: Consider setting CACHE_TYPE=${recommended}`);
+            console.log(`💡 CACHE_TYPE=${cacheType} in ${nodeEnv}, ${recommended} is recommended${hasMongoUri ? '' : ' (no MONGODB_URI)'}`);
         }
-        console.log('');
     }
 }
 

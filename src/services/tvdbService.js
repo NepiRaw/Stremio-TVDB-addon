@@ -6,6 +6,10 @@ const CatalogTransformer = require('./tvdb/catalogTransformer');
 const MetadataTransformer = require('./tvdb/metadataTransformer');
 const UpdatesService = require('./tvdb/updatesService');
 const { getEnhancedReleaseInfo } = require('../utils/theatricalStatus');
+const { rankSearchResults } = require('../utils/searchRanking');
+const { selectPeople } = require('../utils/people');
+const { buildMetaLinks } = require('../utils/metaLinks');
+const { context } = require('../utils/logger');
 
 class TVDBService {
     constructor(cacheService, ratingService = null, logger = null) {
@@ -27,30 +31,39 @@ class TVDBService {
             throw new Error('TVDB_API_KEY environment variable is required');
         }
 
-        this.contentFetcher = new ContentFetcher(this, this.cacheService);
-        this.translationService = new TranslationService(this, this.cacheService, this.logger);
-        this.artworkHandler = new ArtworkHandler(this, this.cacheService);
-        this.catalogTransformer = new CatalogTransformer(this.contentFetcher, this.translationService, this.artworkHandler, this.cacheService);
+        // Healthy TVDB calls land under 300 ms, so this only fires on a connection that stopped answering.
+        this.http = axios.create({
+            timeout: Number(process.env.TVDB_REQUEST_TIMEOUT_MS) || 5000,
+            headers: { 'Accept': 'application/json' }
+        });
+
+        const at = category => this.logger.child ? this.logger.child(category) : this.logger;
+        this.metaLogger = at('META');
+        this.tvdbLogger = at('TVDB');
+
+        this.contentFetcher = new ContentFetcher(this, this.cacheService, at('TVDB'));
+        this.translationService = new TranslationService(this, this.cacheService, at('TVDB'));
+        this.artworkHandler = new ArtworkHandler(this, this.cacheService, at('TVDB'));
+        this.catalogTransformer = new CatalogTransformer(this.contentFetcher, this.translationService, this.artworkHandler, this.cacheService, at('SEARCH'));
         this.metadataTransformer = new MetadataTransformer(
-            this.contentFetcher, 
-            this.translationService, 
-            this.artworkHandler
+            this.contentFetcher,
+            this.translationService,
+            this.artworkHandler,
+            at('META')
         );
-        
-        this.updatesService = new UpdatesService(this, this.cacheService, this.logger);
+
+        this.updatesService = new UpdatesService(this, this.cacheService, at('UPDATES'));
     }
 
     /**
      * Start the TVDB service including updates monitoring
      */
     async start() {
-        this.logger.info('🚀 Starting TVDB service...');
-        
         await this.ensureValidToken();
         
         this.updatesService.start();
         
-        this.logger.info('✅ TVDB service started with updates monitoring');
+        this.logger.info(`✅ TVDB authenticated, updates every ${Math.round(this.updatesService.updateInterval / 3600000)}h`);
     }
 
     stop() {
@@ -61,58 +74,79 @@ class TVDBService {
 
     async authenticate() {
         try {
-            const response = await axios.post(`${this.baseURL}/login`, {
+            const response = await this.http.post(`${this.baseURL}/login`, {
                 apikey: this.apiKey
             });
 
             this.token = response.data.data.token;
             this.tokenExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000);
             
-            this.logger.info('✅ TVDB authentication successful');
+            this.tvdbLogger.debug('authenticated with TVDB');
             return this.token;
         } catch (error) {
-            this.logger.error('❌ TVDB authentication failed:', error.response?.data || error.message);
+            this.tvdbLogger.error(`TVDB authentication failed → ${error.response?.data?.message || error.message}`);
             throw new Error('Failed to authenticate with TVDB API');
         }
     }
 
     async ensureValidToken() {
-        if (!this.token || !this.tokenExpiry || new Date() >= this.tokenExpiry) {
-            await this.authenticate();
+        if (this.token && this.tokenExpiry && new Date() < this.tokenExpiry) return this.token;
+
+        if (!this.authInFlight) {
+            this.authInFlight = this.authenticate().finally(() => { this.authInFlight = null; });
         }
+        await this.authInFlight;
         return this.token;
+    }
+
+    traceCall(endpoint, params, outcome, started) {
+        const query = Object.entries(params).map(([k, v]) => `${k}=${v}`).join('&');
+        const message = `GET ${endpoint}${query ? `?${query}` : ''} → ${outcome}`;
+        if (this.tvdbLogger.event) {
+            this.tvdbLogger.event({ level: 'debug', ms: Date.now() - started, message });
+        } else {
+            this.tvdbLogger.debug(message);
+        }
     }
 
     async makeRequest(endpoint, params = {}) {
         await this.ensureValidToken();
+        context.countCall();
+        const started = Date.now();
+
+        const send = () => this.http.get(`${this.baseURL}${endpoint}`, {
+            headers: {
+                'Authorization': `Bearer ${this.token}`,
+                'Accept': 'application/json'
+            },
+            params
+        });
 
         try {
-            const response = await axios.get(`${this.baseURL}${endpoint}`, {
-                headers: {
-                    'Authorization': `Bearer ${this.token}`,
-                    'Accept': 'application/json'
-                },
-                params
-            });
-
+            const response = await send();
+            this.traceCall(endpoint, params, response.status, started);
             return response.data;
         } catch (error) {
             if (error.response?.status === 401) {
-                this.logger.info('🔄 Token expired, refreshing...');
+                this.tvdbLogger.info('🔄 Token expired, refreshing...');
                 await this.authenticate();
-                
-                const retryResponse = await axios.get(`${this.baseURL}${endpoint}`, {
-                    headers: {
-                        'Authorization': `Bearer ${this.token}`,
-                        'Accept': 'application/json'
-                    },
-                    params
-                });
-                
+
+                const retryResponse = await send();
+                this.traceCall(endpoint, params, `${retryResponse.status} after refresh`, started);
                 return retryResponse.data;
             }
-            
-            this.logger.error(`❌ TVDB API error for ${endpoint}:`, error.response?.data || error.message);
+
+            if (error.response?.status === 404) {
+                this.traceCall(endpoint, params, 404, started);
+            } else {
+                const detail = error.response?.data?.message || error.message;
+                const message = `TVDB API error for ${endpoint} → ${detail}`;
+                if (this.tvdbLogger.event) {
+                    this.tvdbLogger.event({ level: 'error', marker: 'error', ms: Date.now() - started, message });
+                } else {
+                    this.tvdbLogger.error(message);
+                }
+            }
             throw error;
         }
     }
@@ -142,7 +176,8 @@ class TVDBService {
 
         try {
             const response = await this.makeRequest('/search', params);
-            const results = response.data || [];
+            // TVDB returns no relevance order, so rank before caching: warm searches pay nothing.
+            const results = rankSearchResults(response.data || [], query);
             
             if (this.cacheService.setCachedData) {
                 const cacheTTL = 2 * 60 * 60 * 1000; // 2 hours
@@ -212,6 +247,10 @@ class TVDBService {
         return this.contentFetcher.extractImdbId(item);
     }
 
+    async getTvdbIdFromImdbId(imdbId, contentType) {
+        return this.contentFetcher.getTvdbIdFromImdbId(imdbId, contentType);
+    }
+
     async getArtwork(entityType, entityId, language = 'eng') {
         return this.artworkHandler.getArtwork(entityType, entityId, language);
     }
@@ -229,17 +268,12 @@ class TVDBService {
     }
 
     async transformSearchResults(results, type, userLanguage = null) {
-        const catalogResults = await this.catalogTransformer.transformSearchResults(results, type, userLanguage);
-        
-        return catalogResults;
-    }
-
-    transformSearchItemToStremioMeta(item, userLanguage = null) {
-        return this.catalogTransformer.transformSearchItemToStremioMeta(item, userLanguage);
+        const metas = this.catalogTransformer.transformSearchResults(results, type, userLanguage);
+        return this.catalogTransformer.upgradePosters(metas, type, userLanguage);
     }
 
     transformToStremioMeta(item, userLanguage = null) {
-        return this.catalogTransformer.transformSearchItemToStremioMeta(item, userLanguage);
+        return this.catalogTransformer.buildMetaFromSearchItem(item, userLanguage);
     }
 
     async transformDetailedToStremioMeta(item, type, seasonsData = null, tvdbLanguage = 'eng') {
@@ -250,7 +284,6 @@ class TVDBService {
         try {
             const cachedMeta = await this.cacheService.getCachedData('metadata', cacheKey);
             if (cachedMeta && !cachedMeta.notFound) {
-                this.logger.info(`✅ Enhanced metadata cache hit for ${item.name || itemId}`);
                 return cachedMeta;
             }
         } catch (error) {
@@ -265,11 +298,10 @@ class TVDBService {
         
         if (this.ratingService && meta && meta.imdb_id) {
             try {
-                this.logger.info(`🎬 Enriching ${meta.name} (${meta.imdb_id}) with IMDb ratings...`);
                 const ratingData = await this.ratingService.getImdbRating(meta.imdb_id, type);
                 if (ratingData && !ratingData.notFound) {
                     if (ratingData.imdb_rating) {
-                        meta.imdbRating = ratingData.imdb_rating;
+                        meta.imdbRating = String(ratingData.imdb_rating);
                     }
                     if (!meta.votes && ratingData.imdb_votes) {
                         meta.votes = ratingData.imdb_votes;
@@ -299,18 +331,28 @@ class TVDBService {
                         meta.external_ids = { ...meta.external_ids, ...ratingData.external_ids };
                     }
                 } else {
-                    this.logger.info(`ℹ️  No IMDb rating data found for ${meta.imdb_id}`);
+                    this.metaLogger.debug(`ℹ️  No IMDb rating data found for ${meta.imdb_id}`);
                 }
             } catch (error) {
-                this.logger.error(`❌ Failed to enrich metadata with IMDb ratings for ${meta.imdb_id}:`, error.message);
+                this.logger.error(`failed to enrich ratings for ${meta.imdb_id} → ${error.message}`);
             }
         }
         
+        if (!meta.director?.length) {
+            const directors = selectPeople(item.characters, 'director');
+            if (directors.length > 0) {
+                meta.director = directors;
+                this.metaLogger.debug(`director from TVDB: ${directors.join(', ')}`);
+            }
+        }
+
+        const links = buildMetaLinks(meta);
+        if (links) meta.links = links;
+
         // Cache the enhanced metadata (longer TTL since it includes external data)
         const TTL = 24 * 60 * 60 * 1000; // 24 hours in ms
         try {
             await this.cacheService.setCachedData('metadata', cacheKey, meta, TTL);
-            this.logger.info(`📦 Cached enhanced metadata for ${meta.name || itemId} (24h TTL)`);
         } catch (error) {
             this.logger.error(`Failed to cache enhanced metadata: ${error.message}`);
         }

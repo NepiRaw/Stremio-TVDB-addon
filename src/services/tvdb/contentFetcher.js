@@ -2,6 +2,9 @@
  * TVDB Content Fetcher
  * Unified content fetching for movies and series with shared logic
  */
+const { fetchAllEpisodePages } = require('../../utils/episodePager');
+const { isTransportError, reportUpstreamError } = require('../../utils/errorHandler');
+
 class ContentFetcher {
     constructor(apiClient, cacheService, logger) {
         this.apiClient = apiClient;
@@ -14,26 +17,35 @@ class ContentFetcher {
             const numericId = this.extractNumericId(contentId);
             const cachedMetadata = await this.cacheService.getMetadata(contentType, numericId);
             if (cachedMetadata) {
-                this.logger?.debug?.(`Metadata cache HIT for ${contentType} ${numericId}`);
                 return cachedMetadata;
             }
 
             const endpoint = contentType === 'movie' ? 'movies' : 'series';
-            const [basicResult, extendedResult] = await Promise.allSettled([
-                this.apiClient.makeRequest(`/${endpoint}/${numericId}`),
-                this.apiClient.makeRequest(`/${endpoint}/${numericId}/extended`)
-            ]);
-            const basic = basicResult.status === 'fulfilled' ? basicResult.value : null;
-            const extended = extendedResult.status === 'fulfilled' ? extendedResult.value : null;
-            const result = extended?.data || basic?.data || null;
-            await this.cacheService.setMetadata(contentType, numericId, null, result);
-            if (result) {
-                this.logger?.debug?.(`Cached metadata for ${contentType} ${numericId}`);
+            let result = null;
+            let unanswered = false;
+
+            try {
+                result = (await this.apiClient.makeRequest(`/${endpoint}/${numericId}/extended`))?.data || null;
+            } catch (error) {
+                unanswered = isTransportError(error);
+                if (!unanswered) {
+                    try {
+                        result = (await this.apiClient.makeRequest(`/${endpoint}/${numericId}`))?.data || null;
+                    } catch (fallbackError) {
+                        unanswered = isTransportError(fallbackError);
+                    }
+                }
+            }
+
+            if (result || !unanswered) {
+                await this.cacheService.setMetadata(contentType, numericId, null, result);
             }
             return result;
         } catch (error) {
-            this.logger?.error?.(`${contentType} details error for ID ${contentId}:`, error.message);
-            await this.cacheService.setMetadata(contentType, this.extractNumericId(contentId), null, null);
+            reportUpstreamError(this.logger, `${contentType} details for ${contentId}`, error);
+            if (!isTransportError(error)) {
+                await this.cacheService.setMetadata(contentType, this.extractNumericId(contentId), null, null);
+            }
             return null;
         }
     }
@@ -58,7 +70,6 @@ class ContentFetcher {
         try {
             const cachedSeasons = await this.cacheService.getSeasonData(seriesId);
             if (cachedSeasons) {
-                this.logger?.debug?.(`Seasons cache HIT for series ${seriesId}`);
                 return cachedSeasons;
             }
 
@@ -66,51 +77,93 @@ class ContentFetcher {
             const seasons = response?.data?.seasons || [];
             await this.cacheService.setSeasonData(seriesId, null, seasons);
             if (seasons.length > 0) {
-                this.logger?.debug?.(`Got ${seasons.length} seasons for series ${seriesId} (cached)`);
+                this.logger?.debug?.(`seasons → ${seasons.length}`);
             }
             return seasons;
         } catch (error) {
-            this.logger?.error?.(`Series seasons error for ID ${seriesId}:`, error.message);
-            await this.cacheService.setSeasonData(seriesId, null, []);
+            reportUpstreamError(this.logger, `Series seasons for ${seriesId}`, error);
+            if (!isTransportError(error)) {
+                await this.cacheService.setSeasonData(seriesId, null, []);
+            }
             return [];
         }
     }
 
     async getSeriesEpisodes(seriesId, seasonType = 'default') {
-    try {
-        const cacheKey = `episodes:${seasonType}`;
-        const cachedEpisodes = await this.cacheService.getSeasonData(seriesId, cacheKey);
-        if (cachedEpisodes) {
-            this.logger?.debug?.(`Episodes cache HIT for series ${seriesId} (${seasonType})`);
-            return cachedEpisodes;
-        }
+        try {
+            const cacheKey = `episodes:${seasonType}`;
+            const cachedEpisodes = await this.cacheService.getSeasonData(seriesId, cacheKey);
+            if (cachedEpisodes) {
+                return cachedEpisodes;
+            }
 
-        let allEpisodes = [];
-        let page = 0;
-        while (true) {
-            const response = await this.apiClient.makeRequest(`/series/${seriesId}/episodes/${seasonType}`, { page });
-            const episodes = response?.data?.episodes || [];
-            if (episodes.length === 0) break;
-            allEpisodes = allEpisodes.concat(episodes);
-            page++;
-        }
+            const allEpisodes = await fetchAllEpisodePages(this.apiClient, `/series/${seriesId}/episodes/${seasonType}`);
 
-        await this.cacheService.setSeasonData(seriesId, cacheKey, allEpisodes);
-        this.logger?.debug?.(`Got ${allEpisodes.length} episodes for series ${seriesId} (${seasonType}) - cached`);
-        return allEpisodes;
+            await this.cacheService.setSeasonData(seriesId, cacheKey, allEpisodes);
+            return allEpisodes;
         } catch (error) {
-            this.logger?.error?.(`Series episodes error for ID ${seriesId}:`, error.message);
-            await this.cacheService.setSeasonData(seriesId, `episodes:${seasonType}`, []);
+            reportUpstreamError(this.logger, `Series episodes for ${seriesId}`, error);
+            if (!isTransportError(error)) {
+                await this.cacheService.setSeasonData(seriesId, `episodes:${seasonType}`, []);
+            }
             return [];
         }
     }
 
-    async getSeriesExtended(seriesId) {
+    // Shares the metadata cache with getContentDetails, so a later meta request reuses it.
+    async getMovieExtended(movieId) {
+        const numericId = this.extractNumericId(movieId);
         try {
-            const response = await this.apiClient.makeRequest(`/series/${seriesId}/extended`);
-            return response.data;
+            const cached = await this.cacheService.getMetadata('movie', numericId);
+            if (cached) return cached;
+
+            const response = await this.apiClient.makeRequest(`/movies/${numericId}/extended`);
+            const result = response?.data || null;
+            if (result) {
+                await this.cacheService.setMetadata('movie', numericId, null, result);
+            }
+            return result;
         } catch (error) {
-            this.logger?.error?.(`Series extended error for ID ${seriesId}:`, error.message);
+            reportUpstreamError(this.logger, `Movie extended for ${movieId}`, error);
+            return null;
+        }
+    }
+
+    // TVDB indexes external ids under /search/remoteid
+    async getTvdbIdFromImdbId(imdbId, contentType) {
+        const cacheKey = `imdb:remote:${contentType}:${imdbId}`;
+        try {
+            const cached = await this.cacheService.getCachedData('imdb', cacheKey);
+            if (cached) return cached.tvdbId;
+
+            const response = await this.apiClient.makeRequest(`/search/remoteid/${encodeURIComponent(imdbId)}`);
+            const wanted = contentType === 'movie' ? 'movie' : 'series';
+            const match = (response?.data || []).find(entry => entry?.[wanted]?.id);
+            const tvdbId = match ? String(match[wanted].id) : null;
+
+            await this.cacheService.setCachedData('imdb', cacheKey, { tvdbId }, this.cacheService.CACHE_TTLS.imdb);
+            return tvdbId;
+        } catch (error) {
+            reportUpstreamError(this.logger, `Remote id lookup for ${imdbId}`, error);
+            return null;
+        }
+    }
+
+    // The extended record is a superset of /series/{id} and carries seasons
+    async getSeriesExtended(seriesId) {
+        const numericId = this.extractNumericId(seriesId);
+        try {
+            const cached = await this.cacheService.getMetadata('series', numericId);
+            if (cached && Array.isArray(cached.seasons)) return cached;
+
+            const response = await this.apiClient.makeRequest(`/series/${numericId}/extended`);
+            const result = response?.data || null;
+            if (result) {
+                await this.cacheService.setMetadata('series', numericId, null, result);
+            }
+            return result;
+        } catch (error) {
+            reportUpstreamError(this.logger, `Series extended for ${seriesId}`, error);
             return null;
         }
     }
@@ -152,6 +205,7 @@ class ContentFetcher {
                         externalIds.imdb_id = remoteId.startsWith('tt') ? remoteId : `tt${remoteId}`;
                         break;
                     case 'themoviedb':
+                    case 'themoviedb.com':
                     case 'tmdb':
                         externalIds.tmdb_id = remoteId.toString();
                         break;
@@ -160,7 +214,8 @@ class ContentFetcher {
                         break;
                     default:
                         if (sourceName && remoteId) {
-                            externalIds[`${sourceName}_id`] = remoteId.toString();
+                            const key = sourceName.replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+                            if (key) externalIds[`${key}_id`] = remoteId.toString();
                         }
                 }
             });

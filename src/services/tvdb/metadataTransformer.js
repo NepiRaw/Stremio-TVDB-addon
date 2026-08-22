@@ -5,6 +5,7 @@
 
 const { validateImdbRequirement } = require('../../utils/imdbFilter');
 const { getEnhancedReleaseInfo } = require('../../utils/theatricalStatus');
+const { CAST_LIMIT, selectPeople } = require('../../utils/people');
 
 class MetadataTransformer {
     constructor(contentFetcher, translationService, artworkHandler, logger) {
@@ -26,7 +27,7 @@ class MetadataTransformer {
             let primaryId;
             if (externalIds.imdb_id) {
                 primaryId = externalIds.imdb_id;
-                this.logger?.debug(`Using IMDb ID as primary: ${primaryId} (TVDB: ${numericId})`);
+                this.logger?.debug(`imdb ${primaryId} as primary id`);
             } else {
                 primaryId = `tvdb-${numericId}`;
                 this.logger?.debug(`Using TVDB ID as primary: ${primaryId} (no IMDb ID available)`);
@@ -109,60 +110,24 @@ class MetadataTransformer {
     }
 
     async applyArtwork(meta, stremioType, numericId, tvdbLanguage, item) {
-        const artwork = await this.artworkHandler.getArtwork(
-            stremioType === 'movie' ? 'movies' : 'series', 
-            numericId, 
-            tvdbLanguage
-        );
-        
-        if (artwork.poster) {
-            meta.poster = artwork.poster;
-        }
-        
-        if (artwork.background) {
-            meta.background = artwork.background;
-        }
-        
-        if (artwork.logo) {
-            meta.logo = artwork.logo;
-        }
-        
-        // Try English fallback for missing artwork if preferred language wasn't English
-        if ((!artwork.poster || !artwork.background || !artwork.logo) && tvdbLanguage !== 'eng') {
-            const englishArtwork = await this.artworkHandler.getArtwork(
-                stremioType === 'movie' ? 'movies' : 'series', 
-                numericId, 
-                'eng'
+        if (stremioType !== 'movie') {
+            const { primary, english } = await this.artworkHandler.getArtworkPair(
+                'series',
+                numericId,
+                tvdbLanguage
             );
-            
-            if (!meta.poster && englishArtwork.poster) {
-                meta.poster = englishArtwork.poster;
-            }
-            
-            if (!meta.background && englishArtwork.background) {
-                meta.background = englishArtwork.background;
-            }
-            
-            if (!meta.logo && englishArtwork.logo) {
-                meta.logo = englishArtwork.logo;
-            }
+
+            meta.poster = primary.poster || english.poster || meta.poster;
+            meta.background = primary.background || english.background || meta.background;
+            meta.logo = primary.logo || english.logo || meta.logo;
         }
-        
-        // Apply final fallbacks if still no artwork
+
         if (!meta.poster || !meta.background || !meta.logo) {
             const { posterSources, backgroundSources, logoSources } = this.artworkHandler.getArtworkFallbacks(item, stremioType, tvdbLanguage);
-            
-            if (!meta.poster && posterSources.length > 0) {
-                meta.poster = posterSources[0];
-            }
-            
-            if (!meta.background && backgroundSources.length > 0) {
-                meta.background = backgroundSources[0];
-            }
-            
-            if (!meta.logo && logoSources.length > 0) {
-                meta.logo = logoSources[0];
-            }
+
+            if (!meta.poster && posterSources.length > 0) meta.poster = posterSources[0];
+            if (!meta.background && backgroundSources.length > 0) meta.background = backgroundSources[0];
+            if (!meta.logo && logoSources.length > 0) meta.logo = logoSources[0];
         }
     }
 
@@ -177,12 +142,11 @@ class MetadataTransformer {
             meta.genres = item.genres.map(genre => genre.name || genre).filter(Boolean);
         }
 
-        this.addCastWithGenreFiltering(meta, item);
+        this.addCast(meta, item);
 
-        if (item.originalCountry) {
-            meta.country = [item.originalCountry];
-        } else if (item.country) {
-            meta.country = [item.country];
+        const country = item.originalCountry || item.country;
+        if (country) {
+            meta.country = Array.isArray(country) ? country.filter(Boolean).join(', ') : String(country);
         }
 
         if (item.originalLanguage) {
@@ -198,7 +162,7 @@ class MetadataTransformer {
 
     addEnhancedYear(meta, item) {
         if (meta.type === 'movie' && meta.year) {
-            this.logger?.info?.(`📅 Preserving theatrical year for movie: ${meta.year}`);
+            this.logger?.debug?.(`Preserving theatrical year for movie: ${meta.year}`);
             return;
         }
         
@@ -211,20 +175,20 @@ class MetadataTransformer {
             const status = this.extractValidStatus(item.status);
             if (status === 'ended' && endYear && endYear !== startYear) {
                 meta.year = `${startYear}-${endYear}`;
-                this.logger?.info?.(`📅 Series date range: ${meta.year}`);
+                this.logger?.debug?.(`Series date range: ${meta.year}`);
             } else if (status === 'ended') {
                 meta.year = startYear;
-                this.logger?.info?.(`📅 Series year: ${meta.year}`);
+                this.logger?.debug?.(`Series year: ${meta.year}`);
             } else if (status === 'continuing') {
                 meta.year = `${startYear}-`;
-                this.logger?.info?.(`📅 Ongoing series: ${meta.year}`);
+                this.logger?.debug?.(`Ongoing series: ${meta.year}`);
             } else {
                 if (endYear && endYear !== startYear) {
                     meta.year = `${startYear}-${endYear}`;
                 } else {
                     meta.year = startYear;
                 }
-                this.logger?.info?.(`📅 Series year (unknown status): ${meta.year}`);
+                this.logger?.debug?.(`Series year (unknown status): ${meta.year}`);
             }
         } else if (meta.type === 'movie' && !meta.year) {
             meta.year = startYear;
@@ -252,7 +216,7 @@ class MetadataTransformer {
                 } else {
                     meta.description = releaseInfo.statusMessage;
                 }
-                this.logger?.info?.(`🎬 Added theatrical status: ${releaseInfo.statusMessage}`);
+                this.logger?.debug?.(`Added theatrical status: ${releaseInfo.statusMessage}`);
             }
         } catch (error) {
             this.logger?.error?.('Error adding theatrical status:', error);
@@ -286,60 +250,13 @@ class MetadataTransformer {
         }
     }
 
-    addCastWithGenreFiltering(meta, item) {
-        if (!Array.isArray(item.characters) || item.characters.length === 0) {
-            return;
+    addCast(meta, item) {
+        const cast = selectPeople(item.characters, 'actor', CAST_LIMIT);
+
+        if (cast.length > 0) {
+            meta.cast = cast;
+            this.logger?.debug?.(`Added ${cast.length} cast members (sorted by importance): ${cast.join(', ')}`);
         }
-
-        const isAnimatedContent = this.isAnimatedContent(meta.genres || []);
-        
-        if (isAnimatedContent) {
-            // Skip cast for anime/animation content
-            this.logger?.info?.(`🎭 Skipping cast for animated content: ${meta.name}`);
-            return;
-        }
-
-        // Filter valid actors and sort by importance
-        const validActors = item.characters
-            .filter(c => c.people?.name || c.personName)
-            .sort((a, b) => {
-                // Primary: Featured actors first
-                const aFeatured = a.isFeatured ? 0 : 1;
-                const bFeatured = b.isFeatured ? 0 : 1;
-                if (aFeatured !== bFeatured) return aFeatured - bFeatured;
-                
-                // Secondary: Sort by sort order (lower number = more important)
-                const aSort = a.sort !== undefined ? a.sort : 999;
-                const bSort = b.sort !== undefined ? b.sort : 999;
-                return aSort - bSort;
-            });
-
-        // Take top 5 most important actors - Can be adjusted
-        const topActors = validActors
-            .slice(0, 5)
-            .map(c => c.people?.name || c.personName);
-
-        if (topActors.length > 0) {
-            meta.cast = topActors;
-            this.logger?.info?.(`🎭 Added ${topActors.length} cast members (sorted by importance): ${topActors.join(', ')}`);
-        }
-    }
-
-    isAnimatedContent(genres) {
-        if (!Array.isArray(genres)) return false;
-        
-        const animatedGenres = [
-            'anime', 'animation', 'animated', 'cartoon', 'アニメ'
-        ];
-        
-        return genres.some(genre => {
-            if (typeof genre !== 'string') return false;
-            
-            const genreLower = genre.toLowerCase().trim();
-            return animatedGenres.some(animatedGenre => 
-                genreLower.includes(animatedGenre)
-            );
-        });
     }
 
     async addSeriesContent(meta, numericId, seasonsData, tvdbLanguage, externalIds) {
@@ -352,33 +269,34 @@ class MetadataTransformer {
         }
 
         const validSeasons = this.contentFetcher.filterValidSeasons(seasonsData);
-        this.logger?.info?.(`📺 Filtered to ${validSeasons.length} official seasons`);
+        this.logger?.debug?.(`Filtered to ${validSeasons.length} official seasons`);
 
         if (validSeasons.length === 0) {
             meta.behaviorHints = { defaultVideoId: null, hasScheduledVideos: false };
             return;
         }
-        const episodes = await this.contentFetcher.getSeriesEpisodes(numericId);
+        // Independent of each other, so the episode list and its translations are fetched together
+        const [episodes, translations] = await Promise.all([
+            this.contentFetcher.getSeriesEpisodes(numericId),
+            this.translationService.getBulkEpisodeTranslations(numericId, tvdbLanguage)
+        ]);
+
         if (episodes.length === 0) {
             meta.behaviorHints = { defaultVideoId: null, hasScheduledVideos: false };
             return;
         }
-        this.logger?.info?.(`📺 Got ${episodes.length} episodes from API`);
 
-        const translations = await this.translationService.getBulkEpisodeTranslations(numericId, tvdbLanguage);
         const { primaryLookup, fallbackLookup } = this.translationService.createTranslationLookups(
             translations.primary, translations.fallback
         );
 
         const airedEpisodes = this.contentFetcher.filterAiredEpisodes(episodes);
-        this.logger?.info?.(`📺 Filtered to ${airedEpisodes.length} episodes (aired + upcoming)`);
 
         const episodesBySeason = this.contentFetcher.groupEpisodesBySeason(airedEpisodes);
         const seasonsWithContent = validSeasons.filter(season => 
             episodesBySeason[season.number] && episodesBySeason[season.number].length > 0
         );
         meta.seasons = seasonsWithContent.length;
-        this.logger?.info?.(`📺 Final seasons with content: ${meta.seasons}`);
 
         const videoMap = new Map();
         for (const episode of airedEpisodes) {
@@ -406,7 +324,7 @@ class MetadataTransformer {
         }
 
         meta.videos = Array.from(videoMap.values());
-        this.logger?.info?.(`📺 Created ${meta.videos.length} video entries`);
+        this.logger?.debug?.(`episodes ${episodes.length} → ${airedEpisodes.length} aired · ${meta.seasons} seasons · ${meta.videos.length} videos`);
 
         meta.behaviorHints = {
             defaultVideoId: null,
@@ -415,7 +333,6 @@ class MetadataTransformer {
     }
 
     addMovieContent(meta, imdbId) {
-        this.logger?.info?.(`🎬 Movie processing complete: ${meta.name} (${meta.id})`);
         
         if (meta.videos) {
             delete meta.videos;

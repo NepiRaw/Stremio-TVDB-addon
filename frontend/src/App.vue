@@ -13,8 +13,11 @@
       
       <!-- Title and Version -->
       <h1 class="text-white text-[2.5rem] mb-3 font-bold drop-shadow-md">{{ appConfig.ui?.title || 'TVDB Addon' }}</h1>
-      <div class="text-primary-light text-[1rem] mb-8 font-light tracking-wide">
-        Version {{ version }}
+      <div class="mb-8">
+        <span class="inline-flex items-center gap-2 rounded-full bg-primary/15 border border-primary/30 px-4 py-1 text-primary-light text-[0.9rem] font-medium tracking-wide">
+          <i class="fas fa-code-branch text-[0.8rem]"></i>
+          v{{ version }}
+        </span>
       </div>
       
       <!-- Description -->
@@ -82,61 +85,6 @@
         </div>
       </div>
       
-      <!-- Advanced Configuration Toggle -->
-      <div 
-        v-if="appConfig.features?.advancedConfig"
-        @click="toggleAdvanced"
-        class="flex items-center justify-between bg-card-tertiary p-4 rounded-xl cursor-pointer transition-all duration-300 hover:bg-card-secondary border border-primary/10"
-        :class="{ 'active': showAdvanced }"
-      >
-        <span class="font-semibold text-white text-[1.1rem] flex items-center gap-3">
-          <i class="fas fa-cog"></i> Advanced Configuration
-        </span>
-        <i class="fas fa-chevron-down transition-transform duration-300" :class="{ 'rotate-180': showAdvanced }"></i>
-      </div>
-      
-      <!-- Advanced Container -->
-      <div 
-        v-if="appConfig.features?.advancedConfig"
-        ref="advancedContainer"
-        class="bg-card-secondary rounded-b-2xl overflow-hidden transition-all duration-400 ease-out -mt-2"
-        :class="showAdvanced ? 'max-h-screen p-6 pt-6' : 'max-h-0'"
-      >
-        <h2 class="text-primary my-4 text-left text-[1.4rem] flex items-center gap-3">
-          <i class="fas fa-sliders-h"></i> Catalog Configuration
-        </h2>
-        <p class="text-primary-light mb-3 text-left text-[0.9rem]">
-          Customize which catalogs appear in Stremio. Reorder using drag and drop or the arrow buttons.
-        </p>
-        
-        <!-- Tabs -->
-        <div class="catalog-tabs">
-          <button 
-            v-for="tab in tabs" 
-            :key="tab.id"
-            @click="setActiveTab(tab.id)"
-            :class="['catalog-tab', { active: activeTab === tab.id }]"
-          >
-            <i :class="tab.icon"></i> {{ tab.name }}
-          </button>
-        </div>
-        
-        <div class="bg-primary/10 border-l-4 border-primary p-3 rounded-r-lg my-4 text-left text-[0.9rem]">
-          <i class="fas fa-info-circle"></i>
-          Customize your catalogs. Drag to reorder or use the arrow buttons.
-        </div>
-
-        <!-- Tab Contents -->
-        <div v-for="tab in tabs" :key="tab.id" v-show="activeTab === tab.id" class="animate-fade-in">
-          <CatalogConfig 
-            :type="tab.id"
-            :catalogs="catalogConfigs[tab.id]"
-            @update-order="updateOrder"
-            @update-toggle="updateToggle"
-          />
-        </div>
-      </div>
-
       <!-- Install Button -->
       <div class="install-container">
         <button 
@@ -195,20 +143,16 @@
 
 <script>
 import { ref, reactive, onMounted, onUnmounted } from 'vue'
-import CatalogConfig from './components/CatalogConfig.vue'
 import Notification from './components/Notification.vue'
 
 export default {
   name: 'App',
   components: {
-    CatalogConfig,
     Notification
   },
   setup() {
     const version = ref('Loading...')
     const selectedLanguage = ref('eng')
-    const showAdvanced = ref(false)
-    const activeTab = ref('movies')
     const showDropdown = ref(false)
     const isInstalling = ref(false)
     const shouldShowDropdownUp = ref(false)
@@ -221,30 +165,17 @@ export default {
       text: ''
     })
 
-    const tabs = [
-      { id: 'movies', name: 'Movies', icon: 'fas fa-film' },
-      { id: 'series', name: 'TV Series', icon: 'fas fa-tv' },
-      { id: 'anime', name: 'Anime', icon: 'fas fa-dragon' }
-    ]
-
     const dropdownItems = [
       { action: 'install', icon: 'fas fa-desktop', text: 'Install for Desktop' },
       { action: 'web', icon: 'fas fa-window-maximize', text: 'Install for Web' },
       { action: 'copy', icon: 'fas fa-copy', text: 'Copy Manifest URL' }
     ]
 
-    const catalogConfigs = reactive({
-      movies: [],
-      series: [],
-      anime: []
-    })
-
     const getFeatureIcon = (feature) => {
       const iconMap = {
         'Movies': 'fas fa-film',
         'TV Series': 'fas fa-tv', 
-        'Anime': 'fas fa-dragon',
-        'Catalog Browsing': 'fas fa-th-large'
+        'Anime': 'fas fa-dragon'
       }
       return iconMap[feature] || 'fas fa-star'
     }
@@ -260,20 +191,6 @@ export default {
           if (config.ui && config.ui.title) {
             document.title = config.ui.title + ' - Stremio Addon';
           }
-          if (config.features?.advancedConfig && config.ui?.catalogs) {
-            // Use centralized catalog configuration from app-config
-            catalogConfigs.movies = config.ui.catalogs.movies || [];
-            catalogConfigs.series = config.ui.catalogs.series || [];
-            catalogConfigs.anime = config.ui.catalogs.anime || [];
-            
-            // Apply user's saved states
-            loadUserCatalogStates();
-          } else {
-            flushCatalogConfigStorage();
-            catalogConfigs.movies = [];
-            catalogConfigs.series = [];
-            catalogConfigs.anime = [];
-          }
         } else {
           console.warn('Failed to load app config');
           version.value = 'Unknown';
@@ -288,83 +205,8 @@ export default {
       }
     }
 
-    const loadUserCatalogStates = () => {
-      Object.keys(catalogConfigs).forEach(type => {
-        const savedOrder = localStorage.getItem(getStorageKey(type, 'order'));
-        const savedToggles = localStorage.getItem(getStorageKey(type, 'toggles'));
-        
-        if (savedOrder) {
-          try {
-            const orderArray = JSON.parse(savedOrder);
-            const orderedCatalogs = [];
-            const unorderedCatalogs = [...catalogConfigs[type]];
-            
-            orderArray.forEach(id => {
-              const catalog = unorderedCatalogs.find(c => c.id === id);
-              if (catalog) {
-                orderedCatalogs.push(catalog);
-                unorderedCatalogs.splice(unorderedCatalogs.indexOf(catalog), 1);
-              }
-            });
-            
-            catalogConfigs[type] = [...orderedCatalogs, ...unorderedCatalogs];
-          } catch (error) {
-            console.warn(`Failed to parse saved order for ${type}:`, error);
-          }
-        }
-        
-        if (savedToggles) {
-          try {
-            const toggles = JSON.parse(savedToggles);
-            catalogConfigs[type].forEach(catalog => {
-              if (toggles.hasOwnProperty(catalog.id)) {
-                catalog.enabled = toggles[catalog.id];
-              }
-            });
-          } catch (error) {
-            console.warn(`Failed to parse saved toggles for ${type}:`, error);
-          }
-        }
-      });
-    }
-
-    const getIconForCategory = (catalogId) => {
-      // Use centralized icons from app config if available
-      return appConfig.value?.ui?.icons?.[catalogId] || 'fas fa-film';
-    }
-
-    const getTooltipForCatalog = (catalogId, type) => {
-      // Use centralized tooltips from app config if available
-      return appConfig.value?.ui?.tooltips?.[catalogId] || `Browse ${type}s in this category.`;
-    }
-
-    const getStorageKey = (type, key) => `tvdb-addon-${type}-${key}`
-
     const saveLanguage = () => {
       localStorage.setItem('tvdb-addon-language', selectedLanguage.value)
-    }
-
-    const advancedContainer = ref(null)
-    const toggleAdvanced = () => {
-      showAdvanced.value = !showAdvanced.value
-      localStorage.setItem('tvdb-addon-advanced-open', showAdvanced.value)
-      if (showAdvanced.value) {
-        setTimeout(() => {
-          if (advancedContainer.value) {
-            const containerTop = advancedContainer.value.getBoundingClientRect().top
-            const scrollPosition = window.scrollY + containerTop - 30
-            window.scrollTo({
-              top: scrollPosition,
-              behavior: 'smooth'
-            })
-          }
-        }, 350)
-      }
-    }
-
-    const setActiveTab = (tabId) => {
-      activeTab.value = tabId
-      localStorage.setItem('tvdb-addon-active-tab', tabId)
     }
 
     const toggleDropdown = (e) => {
@@ -415,39 +257,7 @@ export default {
     const getManifestUrl = () => {
       if (!manifestUrlTemplate.value) return ''
             
-      let url = manifestUrlTemplate.value.replace('{{LANG}}', selectedLanguage.value)
-      
-      if (appConfig.value.features?.advancedConfig) {
-        const configString = generateConfigString()
-        if (configString) {
-          url += `?config=${encodeURIComponent(configString)}`
-        }
-      } 
-      return url
-    }
-
-    const generateConfigString = () => {
-      if (!appConfig.value.features?.advancedConfig) {
-        return ''
-      }
-      
-      // Additional safety check - if catalogConfigs is empty, don't generate config
-      const totalCatalogs = Object.values(catalogConfigs).reduce((sum, catalogs) => sum + catalogs.length, 0);
-      if (totalCatalogs === 0) {
-        return ''
-      }
-            
-      const configs = []
-      Object.keys(catalogConfigs).forEach(type => {
-        catalogConfigs[type].forEach((catalog, index) => {
-          if (catalog.enabled) {
-            const order = catalog.order || (index + 1)
-            configs.push(`${catalog.id}:${order}`)
-          }
-        })
-      })
-      
-      return configs.join(',')
+      return manifestUrlTemplate.value.replace('{{LANG}}', selectedLanguage.value)
     }
 
     const showNotification = (text) => {
@@ -458,83 +268,19 @@ export default {
       }, 3000)
     }
 
-    const updateOrder = (type, newOrder) => {
-      catalogConfigs[type] = newOrder
-      localStorage.setItem(getStorageKey(type, 'order'), JSON.stringify(newOrder.map(item => item.id)))
-    }
-
-    const updateToggle = (type, catalogId, enabled) => {
-      const catalog = catalogConfigs[type].find(c => c.id === catalogId)
-      if (catalog) {
-        catalog.enabled = enabled
-      }
-      saveToggleStates()
-    }
-
-    const saveToggleStates = () => {
-      Object.keys(catalogConfigs).forEach(type => {
-        const config = {}
-        catalogConfigs[type].forEach(catalog => {
-          config[catalog.id] = catalog.enabled
-        })
-        localStorage.setItem(getStorageKey(type, 'toggles'), JSON.stringify(config))
-      })
-    }
-
-    const flushCatalogConfigStorage = () => {
-      const keysToRemove = []
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i)
-        if (key && (key.includes('tvdb-addon-movies-') || key.includes('tvdb-addon-series-') || key.includes('tvdb-addon-anime-'))) {
-          keysToRemove.push(key)
-        }
-      }
-      keysToRemove.forEach(key => localStorage.removeItem(key))
-      
-      localStorage.removeItem('tvdb-addon-advanced-open')
-      localStorage.removeItem('tvdb-addon-active-tab')
-    }
-
     const loadInitialState = () => {
       selectedLanguage.value = localStorage.getItem('tvdb-addon-language') || 'eng'
-      
-      if (appConfig.value.features?.advancedConfig) {
-        showAdvanced.value = localStorage.getItem('tvdb-addon-advanced-open') === 'true'
-        
-        activeTab.value = localStorage.getItem('tvdb-addon-active-tab') || 'movies'
-        
-        Object.keys(catalogConfigs).forEach(type => {
-          const savedToggles = JSON.parse(localStorage.getItem(getStorageKey(type, 'toggles')) || '{}')
+      clearLegacyCatalogStorage()
+    }
 
-          catalogConfigs[type].forEach(catalog => {
-            if (savedToggles.hasOwnProperty(catalog.id)) {
-              catalog.enabled = savedToggles[catalog.id];
-            } else {
-              catalog.enabled = catalog.enabled ?? true;
-            }
-          });
-          
-          const savedOrder = JSON.parse(localStorage.getItem(getStorageKey(type, 'order')) || '[]')
-          if (savedOrder.length > 0) {
-            const orderedCatalogs = []
-            savedOrder.forEach(id => {
-              const catalog = catalogConfigs[type].find(c => c.id === id)
-              if (catalog) {
-                orderedCatalogs.push(catalog)
-              }
-            })
-            catalogConfigs[type].forEach(catalog => {
-              if (!orderedCatalogs.find(c => c.id === catalog.id)) {
-                orderedCatalogs.push(catalog)
-              }
-            })
-            catalogConfigs[type] = orderedCatalogs
-          }
-        })
-      } else {
-        showAdvanced.value = false
-        activeTab.value = 'movies'
+    // Catalog customisation was removed; drop the keys older builds left behind.
+    const clearLegacyCatalogStorage = () => {
+      const stale = ['tvdb-addon-advanced-open', 'tvdb-addon-active-tab']
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i)
+        if (key && /^tvdb-addon-(movies|series|anime)-/.test(key)) stale.push(key)
       }
+      stale.forEach(key => localStorage.removeItem(key))
     }
 
     const handleClickOutside = (e) => {
@@ -556,25 +302,16 @@ export default {
     return {
       version,
       selectedLanguage,
-      showAdvanced,
-      activeTab,
       showDropdown,
       isInstalling,
       notification,
-      tabs,
       dropdownItems,
-      catalogConfigs,
       appConfig,
       getFeatureIcon,
       saveLanguage,
-      toggleAdvanced,
-      setActiveTab,
       toggleDropdown,
       handleInstall,
-      handleInstallAction,
-      updateOrder,
-      updateToggle,
-      advancedContainer
+      handleInstallAction
     }
   }
 }

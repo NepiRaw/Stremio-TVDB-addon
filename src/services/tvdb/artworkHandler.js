@@ -3,6 +3,8 @@
  * Handles poster, background, and logo selection for movies and series
  */
 
+const { isTransportError, reportUpstreamError } = require('../../utils/errorHandler');
+
 class ArtworkHandler {
     constructor(apiClient, cacheService, logger) {
         this.apiClient = apiClient;
@@ -10,12 +12,50 @@ class ArtworkHandler {
         this.logger = logger;
     }
 
+    /**
+     * Both languages a meta request needs, from a single fetch. 
+     * Only the two selections are cached.
+     */
+    async getArtworkPair(entityType, entityId, language = 'eng') {
+        const empty = () => ({ poster: null, background: null, logo: null });
+        const cachedPrimary = await this.cacheService.getArtwork(entityType, entityId, language);
+        const cachedEnglish = language === 'eng'
+            ? cachedPrimary
+            : await this.cacheService.getArtwork(entityType, entityId, 'eng');
+
+        if (cachedPrimary && cachedEnglish) return { primary: cachedPrimary, english: cachedEnglish };
+        if (entityType === 'movies' || entityType === 'movie') return { primary: empty(), english: empty() };
+
+        let artworks = [];
+        try {
+            const response = await this.apiClient.makeRequest(`/series/${entityId}/artworks`);
+            artworks = response?.data?.artworks || [];
+        } catch (error) {
+            reportUpstreamError(this.logger, `artwork for ${entityType} ${entityId}`, error);
+            return { primary: cachedPrimary || empty(), english: cachedEnglish || empty() };
+        }
+
+        const select = lang => {
+            if (artworks.length === 0) return empty();
+            const result = this.selectOptimalArtwork(artworks, lang);
+            result.logo = this.selectBestClearlogo(artworks, lang);
+            return result;
+        };
+
+        const primary = cachedPrimary || select(language);
+        const english = language === 'eng' ? primary : (cachedEnglish || select('eng'));
+
+        if (!cachedPrimary) await this.cacheService.setArtwork(entityType, entityId, language, primary);
+        if (!cachedEnglish && language !== 'eng') await this.cacheService.setArtwork(entityType, entityId, 'eng', english);
+
+        return { primary, english };
+    }
+
     async getArtwork(entityType, entityId, language = 'eng') {
         try {
             const cacheKey = `${entityType}:${entityId}:${language}`;
             const cachedArtwork = await this.cacheService.getArtwork(entityType, entityId, language);
             if (cachedArtwork) {
-                this.logger?.debug?.(`Artwork cache HIT for ${entityType} ${entityId}`);
                 return cachedArtwork;
             }
 
@@ -40,12 +80,13 @@ class ArtworkHandler {
             result.logo = this.selectBestClearlogo(artworks, language);
             
             await this.cacheService.setArtwork(entityType, entityId, language, result);
-            this.logger?.debug?.(`Cached artwork for ${entityType} ${entityId}`);
             return result;
         } catch (error) {
-            this.logger?.error?.(`Artwork fetch error for ${entityType} ${entityId}:`, error.message);
+            reportUpstreamError(this.logger, `artwork for ${entityType} ${entityId}`, error);
             const result = { poster: null, background: null, logo: null };
-            await this.cacheService.setArtwork(entityType, entityId, language, result);
+            if (!isTransportError(error)) {
+                await this.cacheService.setArtwork(entityType, entityId, language, result);
+            }
             return result;
         }
     }

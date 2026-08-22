@@ -1,260 +1,114 @@
-# Enhanced Caching Strategy
+# Caching Strategy
 
-## Overview
+The addon caches in six tiers, either in memory alone or in memory backed by MongoDB.
 
-The TVDB addon uses a robust, production-grade multi-tier caching system to maximize performance, minimize API calls, and ensure data freshness. 
-The system supports both **in-memory** and **hybrid (MongoDB + in-memory)** caching, with all configuration and TTLs matching the current production deployment.
-
-## Architecture
-
-src/services/cache/
-
-### Cache Service Structure
+## Cache services
 
 ```
 src/services/cache/
-├── inMemoryCacheService.js     # L1 in-memory caching
-├── hybridCacheService.js       # L1 + L2 hybrid caching with MongoDB
-├── cacheFactory.js             # Configuration-based cache selection
+├── inMemoryCacheService.js     # L1 only
+├── hybridCacheService.js       # L1 + L2 (MongoDB)
+├── cacheFactory.js             # picks one from CACHE_TYPE
 └── utils/
-    ├── cacheMigration.js       # Migration utility (in-memory → hybrid)
-    └── inspectL2Cache.js       # MongoDB cache inspection tool
+    ├── cacheMigration.js       # in-memory to hybrid migration and quick inspection
+    ├── inspectL2Cache.js       # MongoDB cache inspector
+    └── clearCache.js           # MongoDB cache viewer and clearer, interactive
 ```
 
+Select one with `CACHE_TYPE`:
 
-### Cache Types
+| value | behaviour |
+|---|---|
+| `memory` | L1 only. No persistence. The default. |
+| `hybrid` | L1 plus MongoDB. An L2 hit is promoted to L1. Falls back to L1 alone if Mongo is unreachable. Recommended in production. |
+| `mongodb` | Same hybrid service, kept as an alias. |
 
-The system supports two caching strategies:
+`hybrid` and `mongodb` both need a valid `MONGODB_URI`. Without one the factory logs that MongoDB is not configured and uses memory only, rather than failing.
 
-1. **In-Memory Cache (L1 only)**
-   - Fast, single-tier memory cache
-   - TTL management and auto-cleanup
+## Tiers and TTLs
 
-2. **Hybrid Cache (L1 + L2)**
-   - **L1**: In-memory for fastest access
-   - **L2**: MongoDB for persistence, scalability, and cross-instance sharing
-   - L2 hits are promoted to L1 for future speed
-   - Graceful fallback to L1 if MongoDB is unavailable
+Six tiers. There is no static tier, despite what older documentation claimed.
 
-
-## Cache Types & TTL Configuration
-
-### Current TTL Values
-
-| Cache Type    | TTL         | Rationale                                      |
-|---------------|------------|------------------------------------------------|
-| **Search**    | 2 hours    | Popular searches, but results can change       |
-| **IMDB**      | 7 days     | IMDB IDs and metadata rarely change            |
-| **Artwork**   | 14 days    | Artwork URLs are very static                   |
-| **Translation**| 3 days    | Translations rarely update once established    |
-| **Metadata**  | 12 hours   | Basic content metadata updates infrequently    |
-| **Season**    | 6 hours    | Episodes and seasons update occasionally       |
-| **Static**    | 30 days    | Genres, content types are extremely static     |
-
-
-### Performance Benefits
-
-- **Dramatic Performance Improvement**: 64% faster response times (888ms → 315ms)
-- **Reduced API Calls**: Zero API calls for cached content
-- **Intelligent TTLs**: Data types cached based on update frequency
-- **Memory Efficient**: Automatic cleanup every 5 minutes
-
-
-## Cache Architecture
-
-### 7-Type Cache System
-
-```javascript
-this.searchCache = new Map();           // Search results
-this.imdbCache = new Map();            // IMDB validation
-this.artworkCache = new Map();         // Artwork data (posters, backgrounds)
-this.translationCache = new Map();     // Language translations
-this.metadataCache = new Map();        // Full content metadata
-this.seasonCache = new Map();          // Season/episode data
-this.staticCache = new Map();          // Genres, types, etc.
-```
-
-### Key Features
-
-- **Generic Cache Methods**: Unified API for all cache types
-- **TTL Management**: Automatic expiry and cleanup
-- **Cache Hit/Miss Logging**: Accessible using Debug log
-- **Pattern-Based Keys**: Efficient cache invalidation and updates
-- **Cleanup Automation**: Memory management and leak prevention
-
-
-## TVDB /updates Endpoint Integration
-
-### Production Implementation
-
-- **Smart Invalidation**: Uses TVDB `/updates` endpoint every 12 hours (configurable)
-- **Selective Updates**: Only refreshes changed content, not the entire cache
-- **Pattern-Based Clearing**: Efficiently clears all related cache entries for updated series
-- **Background Processing**: Updates run in the background with automatic recovery
-
-### Benefits of Hybrid Approach
-
-✅ **Longer TTLs**: Reduced cache misses
-✅ **Smart Updates**: Only refresh what changed
-✅ **TVDB Compliant**: Uses recommended `/updates` endpoint
-✅ **Performance**: Minimal API calls
-✅ **Freshness**: Changes reflected within 12 hours
-
-
-## Configuration
-
-The cache system is fully configurable via environment variables and the `CACHE_TTLS` object in code:
+| tier | TTL | why |
+|---|---|---|
+| search | 2 hours | popular queries, but results do change |
+| imdb | 7 days | external ids barely move |
+| artwork | 14 days | artwork URLs are close to permanent |
+| translation | 3 days | translations rarely change once written |
+| metadata | 12 hours | core content data updates infrequently |
+| season | 6 hours | episode lists update occasionally |
 
 ```javascript
 this.CACHE_TTLS = {
-    search: 2 * 60 * 60 * 1000,        // 2 hours
-    imdb: 7 * 24 * 60 * 60 * 1000,     // 7 days
-    artwork: 14 * 24 * 60 * 60 * 1000, // 14 days
-    translation: 3 * 24 * 60 * 60 * 1000, // 3 days
-    metadata: 12 * 60 * 60 * 1000,     // 12 hours
-    season: 6 * 60 * 60 * 1000,        // 6 hours
-    static: 30 * 24 * 60 * 60 * 1000   // 30 days
+    search:      2  * 60 * 60 * 1000,
+    imdb:        7  * 24 * 60 * 60 * 1000,
+    artwork:     14 * 24 * 60 * 60 * 1000,
+    translation: 3  * 24 * 60 * 60 * 1000,
+    metadata:    12 * 60 * 60 * 1000,
+    season:      6  * 60 * 60 * 1000
 };
 ```
 
-**Hybrid cache is enabled by setting `CACHE_TYPE=hybrid` and providing a valid `MONGODB_URI` in your `.env` file.**
+Two things share the `metadata` tier with their own TTL passed per call: the assembled `meta:enhanced:*` payload at 24 hours, and IMDb ratings at 7 days on success and 1 hour on a miss.
 
+**TTLs are milliseconds.** `setCachedData(type, key, data, ttl)` adds `ttl` to `Date.now()`.
 
-## Admin/Monitoring Endpoints (Secured)
+Expired entries are swept every 5 minutes. The sweep timer is `unref()`ed, so it never holds the process open.
 
-**⚠️ Security Note**: Admin endpoints require authentication (via `ADMIN_API_KEY`) and are rate-limited for security. Endpoints are only available if the admin key is set in the environment.**
+## Reading and writing
 
-### Prerequisites
-```bash
-# Set admin API key in environment
-ADMIN_API_KEY=your-secure-random-key-here
+```javascript
+await cacheService.getCachedData(type, key);              // type is one of the six tier names
+await cacheService.setCachedData(type, key, data, ttl);   // ttl in milliseconds
 ```
 
-### Authentication Methods
-1. **Header Authentication** (Recommended):
-   - `curl -H "X-Admin-Key: your-secure-key" http://localhost:3000/admin/updates/status`
-2. **Query Parameter** (Less secure):
-   - `curl "http://localhost:3000/admin/updates/status?key=your-secure-key"`
+Both services accept the tier name. The in-memory service also accepts a `Map` directly, for internal callers.
 
-### Rate Limiting
-- **Limit**: 10 requests per minute per IP
-- **Status**: 429 Too Many Requests when exceeded
+## Caching an absence
 
-### Endpoints
+An empty result is written to the cache **only when TVDB actually answered**. 
+The rule is `error.response` present means TVDB replied and the absence is real; `error.response` absent means the answer is unknown and nothing is cached.
 
-- `GET /admin/updates/status` — Returns current status of the updates service (last check, next check)
-- `POST /admin/updates/trigger` — Manually triggers an updates check
-- `GET /admin/cache/stats` — Returns cache statistics and TTLs
+## Invalidation and the /updates endpoint
 
-### Security Features
+The TVDB `/updates` endpoint is polled every 12 hours, and only the entries belonging to changed entities are cleared.
 
-- **API Key Authentication**: Prevents unauthorized access
-- **Rate Limiting**: 10 requests/minute per IP
-- **Environment Configuration**: Admin key from environment variables
-- **Automatic Disable**: Endpoints disabled if no admin key configured
+Invalidation goes through `invalidateByPrefixes`, which batches every prefix into one operation per cycle.
 
+**On the hybrid cache, invalidation has to reach L2.** Clearing only the L1 map achieves nothing, because the very next read repopulates L1 from MongoDB with the same stale value. A count of entries cleared is not evidence that anything was invalidated. Read the value back from the layer that serves requests.
+
+Entity types are normalised before matching, because TVDB sends plural and `translated*` forms that a singular comparison silently drops.
 
 ## Monitoring
 
-Cache performance can be monitored through:
+- `GET /admin/cache/stats` returns per-tier entry counts and the TTL table. Requires `ADMIN_API_KEY`.
+- `getStats()` gives the same figures in process. The in-memory implementation returns no `type` field, which is why `/health` reports `cache.type: "unknown"` under `CACHE_TYPE=memory`.
+- Cache hits and misses are logged at `debug`, carrying the tier and the lookup cost. Inside a fan-out the per-row lines drop to `trace` and the batch reports one summary line with the real spread, so a 20 row search no longer emits 40 lines. `LOG_LEVEL=trace` restores every suppressed line.
 
-- Console logging for cache hits/misses (Debug log: `💾 Cache:HIT` / `🔍 Cache:MISS`)
-- `getStats()` method for comprehensive metrics
-- Automatic cleanup logging every 5 minutes
+## Inspection tools
 
-
-## Best Practices
-
-1. **Content-Agnostic**: Cache keys are generic and work for all content types (movies, series, anime, etc.)
-2. **Language-Aware**: Separate cache entries for different languages
-3. **Type-Specific**: Different TTLs for different data volatility patterns
-4. **Memory Efficient**: Automatic cleanup prevents memory leaks
-5. **Future-Proof**: Architecture ready for MongoDB migration and new content types
-
-
-## Cache Inspection & Debugging Tools
-
-### L2 Cache Inspector (`inspectL2Cache.js`)
-
-A comprehensive tool for viewing MongoDB cache contents in detail.
+### `inspectL2Cache.js`
 
 ```bash
-# View cache summary
 node src/services/cache/utils/inspectL2Cache.js summary
-
-# View specific cache type details
 node src/services/cache/utils/inspectL2Cache.js details search 10
-node src/services/cache/utils/inspectL2Cache.js details metadata 5
-
-# Search cache contents
 node src/services/cache/utils/inspectL2Cache.js search "batman"
 ```
 
-**Features:**
-- **Summary View**: Total entries per cache type (active/expired)
-- **Detailed View**: Entry keys, data sizes, TTL remaining, data previews
-- **Search Function**: Find cached content by key or data content
-- **Data Previews**: Truncated view of cached data for readability
-- **Expiry Status**: Visual indicators for active vs expired entries
+Summary gives totals per tier with active and expired counts. Details lists keys, sizes, remaining TTL and a truncated data preview.
 
-### Cache Migration Tool (`cacheMigration.js`)
-
-Utility for migrating between cache strategies and inspection.
+### `cacheMigration.js`
 
 ```bash
-# Run full migration (in-memory → hybrid)
 node src/services/cache/utils/cacheMigration.js migrate
-
-# Quick cache inspection
-node src/services/cache/utils/cacheMigration.js inspect
-node src/services/cache/utils/cacheMigration.js inspect search
 node src/services/cache/utils/cacheMigration.js inspect metadata batman
-
-# Show help
 node src/services/cache/utils/cacheMigration.js help
 ```
 
-**Purpose of cacheMigration.js:**
-1. **Data Migration**: Seamlessly migrate existing cache data from in-memory to hybrid MongoDB storage
-2. **Performance Testing**: Compare cache performance between strategies
-3. **Data Integrity**: Verify cache data consistency during migration
-4. **Production Transition**: Safe transition from development (in-memory) to production (hybrid) caching
-5. **Cache Inspection**: Quick MongoDB cache inspection for debugging
+Moves non-expired entries from in-memory to hybrid storage, preserving their remaining TTL, and reports what it moved.
 
-**Migration Process:**
-- Preserves existing TTLs during migration
-- Transfers only non-expired entries
-- Provides performance comparison metrics
-- Generates detailed migration reports
-- Safe fallback if migration fails
+## Notes for anyone changing this
 
-### Usage Examples
-
-**Viewing Current Cache Status:**
-```bash
-# See what's cached in MongoDB
-node src/services/cache/utils/inspectL2Cache.js summary
-
-# Expected output:
-📊 L2 Cache Summary:
-📁 SEARCH: Total: 106, Active: 106, Expired: 0
-📁 IMDB: Total: 102, Active: 102, Expired: 0
-📁 ARTWORK: Total: 102, Active: 102, Expired: 0
-📁 METADATA: Total: 111, Active: 111, Expired: 0
-🎯 TOTALS: Active: 421 entries, Size: ~88 KB
-```
-
-**Debugging Search Issues:**
-```bash
-# Find Batman-related cached searches
-node src/services/cache/utils/inspectL2Cache.js search batman
-
-# View recent search cache entries
-node src/services/cache/utils/inspectL2Cache.js details search 10
-```
-
-**Production Migration:**
-```bash
-# Migrate from in-memory to hybrid with full report
-node src/services/cache/utils/cacheMigration.js migrate
-```
+- Cache keys are content-agnostic and language-aware. The same payload can therefore be stored once per language even when the upstream call took no language, which `search()` currently does.
+- Different volatility gets a different tier. Do not reuse a tier because its name is close enough.
+- Assert a computed lifetime in a test rather than trusting the arithmetic beside it.

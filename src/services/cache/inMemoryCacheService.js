@@ -29,35 +29,60 @@ class CacheService {
         this.startCleanupInterval();
     }
 
-    getCachedData(cacheMap, key) {
-        const cached = cacheMap.get(key);
-        const now = Date.now();
-        if (cached) {
-            this.logger?.debug(`⏱️ Checking cache for key: ${key} | now: ${now} | expiry: ${cached.expiry} | ttl(ms) left: ${cached.expiry - now}`);
+    // A cache line reports the tier it answered from and what the lookup cost.
+    trace(marker, started, message) {
+        if (this.logger?.event) {
+            this.logger.event({ level: 'debug', marker, ms: Date.now() - started, message });
+        } else {
+            this.logger?.debug?.(message);
         }
-        if (cached && now < cached.expiry) {
-            this.logger?.debug(`💾 Cache:HIT: ${key}`);
+    }
+
+    // A cached empty answer is the dangerous kind, so it is the one worth seeing written.
+    traceWrite(started, key, data, ttl) {
+        const empty = data === null || data === undefined || (Array.isArray(data) && data.length === 0);
+        if (empty) this.trace('none', started, `write empty · ${key} · ttl ${Math.round(ttl / 60000)}min`);
+    }
+
+    getCachedData(cacheTypeOrMap, key) {
+        const started = Date.now();
+        const cacheMap = this.getCacheMap(cacheTypeOrMap);
+        if (!cacheMap) {
+            this.logger?.warn?.(`Unknown cache type: ${cacheTypeOrMap}`);
+            return null;
+        }
+
+        const cached = cacheMap.get(key);
+        if (cached && started < cached.expiry) {
+            this.trace('cache', started, `hit L1 · ${key}`);
             return cached.data;
         }
         if (cached) {
-            this.logger?.debug(`🗑️ Cache EXPIRED: ${key} | now: ${now} | expiry: ${cached.expiry}`);
             cacheMap.delete(key);
+            this.trace('none', started, `miss L1, expired · ${key}`);
+            return null;
         }
-        this.logger?.debug(`🔍 Cache:MISS: ${key}`);
+        this.trace('none', started, `miss L1 · ${key}`);
         return null;
     }
 
-    setCachedData(cacheMap, key, data, ttl) {
-        const now = Date.now();
-        const expiry = now + ttl;
+    setCachedData(cacheTypeOrMap, key, data, ttl) {
+        const cacheMap = this.getCacheMap(cacheTypeOrMap);
+        if (!cacheMap) {
+            this.logger?.warn?.(`Unknown cache type: ${cacheTypeOrMap}`);
+            return;
+        }
+
+        const started = Date.now();
+        const expiry = started + ttl;
         const entry = {
             data: data,
             expiry: expiry,
-            timestamp: now,
+            timestamp: started,
             type: this.getCacheTypeFromKey(key)
         };
         cacheMap.set(key, entry);
-        this.logger?.debug(`💾 Cached data: ${key} | now: ${now} | expiry: ${expiry} | ttl(ms): ${ttl} | ttl(min): ${Math.round(ttl / 60000)}`);
+        this.traceWrite(started, key, data, ttl);
     }
 
     getCacheTypeFromKey(key) {
@@ -182,6 +207,28 @@ class CacheService {
         this.logger?.info(`🗑️ Cleared all caches:`, counts);
     }
 
+    /**
+     * Deletes every key starting with one of the given prefixes, grouped by cache type.
+     * Takes the whole batch at once so callers do not pay a round trip per prefix.
+     */
+    invalidateByPrefixes(prefixesByType) {
+        let removed = 0;
+
+        for (const [cacheType, prefixes] of Object.entries(prefixesByType || {})) {
+            const cacheMap = this.getCacheMap(cacheType);
+            if (!cacheMap || !Array.isArray(prefixes) || prefixes.length === 0) continue;
+
+            for (const key of [...cacheMap.keys()]) {
+                if (prefixes.some(prefix => key.startsWith(prefix))) {
+                    cacheMap.delete(key);
+                    removed++;
+                }
+            }
+        }
+
+        return removed;
+    }
+
     clearByPattern(pattern) {
         let totalRemoved = 0;
         
@@ -225,6 +272,8 @@ class CacheService {
     }
 
     getCacheMap(cacheType) {
+        if (cacheType instanceof Map) return cacheType;
+
         const cacheMappers = {
             'search': this.searchCache,
             'imdb': this.imdbCache,
@@ -233,7 +282,7 @@ class CacheService {
             'metadata': this.metadataCache,
             'season': this.seasonCache
         };
-        return cacheMappers[cacheType];
+        return cacheMappers[cacheType] || null;
     }
 
     getStats() {
@@ -288,8 +337,8 @@ class CacheService {
     }
 
     startCleanupInterval() {
-        setInterval(() => this.cleanup(), 5 * 60 * 1000);
-        this.logger?.info('🕐 Enhanced cache cleanup interval started (5 minutes)');
+        setInterval(() => this.cleanup(), 5 * 60 * 1000).unref();
+        this.logger?.debug?.('cache cleanup timer started, every 5 minutes');
     }
 }
 
