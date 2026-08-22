@@ -24,7 +24,7 @@
 - 📺 **TV Series**: Full series information with seasons and episodes
 - 🎌 **Anime**: Comprehensive anime database integration
 - 🔍 **Search-Only Catalogs**: Clean, clutter-free browsing experience
-- 🌐 **Multi-Language Support**: Content in 11+ languages
+- 🌐 **Multi-Language Support**: 48 languages accepted, 11 offered in the configuration dropdown
 
 ## 📋 Table of Contents
 
@@ -46,9 +46,10 @@
 3. Click "Install Addon" to add it to Stremio
 
 ### Configuration Options
-- **Language Selection**: Choose from 11 supported languages
-  - Content metadata will be shown in your preferred language when available
-  - Falls back to English if translation unavailable
+- **Language Selection**: 11 languages in the dropdown
+  - Content metadata is shown in your preferred language when available
+  - Falls back to English when a translation is missing
+  - The backend accepts all 48 codes listed by `GET /api/languages`, so a URL such as `/swe/manifest.json` works even though Swedish is not in the dropdown. An unknown code falls back to English rather than failing.
 
 ## 🚀 Self-Hosting Installation
 
@@ -167,8 +168,13 @@ npm start
 | `PORT` | ❌ Optional | `3000` | Server port |
 | `ADMIN_API_KEY` | 🔸 Recommended | - | Secure key for admin operations and monitoring |
 | `MONGODB_URI` | 🔸 Recommended | - | MongoDB connection string for persistent caching |
+| `MONGO_DB_NAME` | ❌ Optional | - | Database name for the L2 cache |
 | `CACHE_TYPE` | ❌ Optional | `memory` | Cache strategy: `memory`, `hybrid`, or `mongodb` |
-| `LOG_LEVEL` | ❌ Optional | `info` | Logging level: `error`, `warn`, `info`, or `debug` |
+| `NODE_ENV` | ❌ Optional | `development` | `development`, `production` or `test` |
+| `LOG_LEVEL` | ❌ Optional | `info` | `error`, `warn`, `info`, `debug` or `trace` |
+| `LOG_WATCHDOG_MS` | ❌ Optional | `2000` | When a still-running request gets a watchdog log line |
+| `TVDB_REQUEST_TIMEOUT_MS` | ❌ Optional | `5000` | Abandons a TVDB request that stopped answering |
+| `META_CAST_LIMIT` | ❌ Optional | `3` | How many actors reach `meta.cast`. `0` means none |
 
 ### Cache Configuration Details
 - **`memory`**: Fast in-memory cache, no persistence (good for development)
@@ -180,11 +186,13 @@ npm start
 ## 📡 API Documentation
 
 ### Public Endpoints
-- `GET /` - Installation page
-- `GET /manifest.json` - Stremio addon manifest
-- `GET /catalog/:type/:id/:extra?.json` - Catalog search endpoint
-- `GET /meta/:type/:id.json` - Metadata endpoint
+- `GET /` - Configuration and installation page
+- `GET /{language}/manifest.json` - Stremio addon manifest
+- `GET /{language}/catalog/{type}/{id}/{extra}.json` - Search
+- `GET /{language}/meta/{type}/{id}.json` - Metadata
 - `GET /health` - Health check
+
+The unprefixed `/manifest.json`, `/catalog/…` and `/meta/…` routes exist as a fallback and behave as English. The language-prefixed form is what the configuration page installs.
 
 ### Admin Endpoints (Secured)
 - `GET /admin/cache/stats` - Cache performance statistics
@@ -204,10 +212,9 @@ npm start
 
 ## 📚 Documentation
 
-- [API Documentation](docs/API.md) - Complete API reference with admin endpoints
-- [Development Guide](docs/DEVELOPMENT.md) - Development setup and architectural patterns  
-- [Deployment Guide](docs/DEPLOYMENT.md) - Production deployment with security considerations
-- [Caching Strategy](docs/CACHING_STRATEGY.md) - Performance optimization and updates system
+- [API Documentation](docs/API.md) - routes, real payload shapes, admin endpoints
+- [Development Guide](docs/DEVELOPMENT.md) - project structure, TVDB endpoints, deployment, environment variables
+- [Caching Strategy](docs/CACHING_STRATEGY.md) - the six cache tiers, TTLs, invalidation and tooling
 
 ---
 
