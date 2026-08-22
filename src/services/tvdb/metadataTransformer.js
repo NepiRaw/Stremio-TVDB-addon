@@ -5,6 +5,7 @@
 
 const { validateImdbRequirement } = require('../../utils/imdbFilter');
 const { getEnhancedReleaseInfo } = require('../../utils/theatricalStatus');
+const { CAST_LIMIT, selectPeople } = require('../../utils/people');
 
 class MetadataTransformer {
     constructor(contentFetcher, translationService, artworkHandler, logger) {
@@ -141,7 +142,7 @@ class MetadataTransformer {
             meta.genres = item.genres.map(genre => genre.name || genre).filter(Boolean);
         }
 
-        this.addCastWithGenreFiltering(meta, item);
+        this.addCast(meta, item);
 
         const country = item.originalCountry || item.country;
         if (country) {
@@ -249,67 +250,13 @@ class MetadataTransformer {
         }
     }
 
-    addCastWithGenreFiltering(meta, item) {
-        if (!Array.isArray(item.characters) || item.characters.length === 0) {
-            return;
+    addCast(meta, item) {
+        const cast = selectPeople(item.characters, 'actor', CAST_LIMIT);
+
+        if (cast.length > 0) {
+            meta.cast = cast;
+            this.logger?.debug?.(`Added ${cast.length} cast members (sorted by importance): ${cast.join(', ')}`);
         }
-
-        const isAnimatedContent = this.isAnimatedContent(meta.genres || []);
-        
-        if (isAnimatedContent) {
-            // Skip cast for anime/animation content
-            this.logger?.debug?.(`Skipping cast for animated content: ${meta.name}`);
-            return;
-        }
-
-        // Filter valid actors and sort by importance
-        const validActors = item.characters
-            .filter(c => c.people?.name || c.personName)
-            .sort((a, b) => {
-                // Primary: Featured actors first
-                const aFeatured = a.isFeatured ? 0 : 1;
-                const bFeatured = b.isFeatured ? 0 : 1;
-                if (aFeatured !== bFeatured) return aFeatured - bFeatured;
-                
-                // Secondary: Sort by sort order (lower number = more important)
-                const aSort = a.sort !== undefined ? a.sort : 999;
-                const bSort = b.sort !== undefined ? b.sort : 999;
-                return aSort - bSort;
-            });
-
-        // Take top 5 most important actors - Can be adjusted
-        const seen = new Set();
-        const topActors = validActors
-            .filter(c => {
-                const person = c.peopleId ?? c.people?.id ?? (c.people?.name || c.personName);
-                if (seen.has(person)) return false;
-                seen.add(person);
-                return true;
-            })
-            .slice(0, 5)
-            .map(c => c.people?.name || c.personName);
-
-        if (topActors.length > 0) {
-            meta.cast = topActors;
-            this.logger?.debug?.(`Added ${topActors.length} cast members (sorted by importance): ${topActors.join(', ')}`);
-        }
-    }
-
-    isAnimatedContent(genres) {
-        if (!Array.isArray(genres)) return false;
-        
-        const animatedGenres = [
-            'anime', 'animation', 'animated', 'cartoon', 'アニメ'
-        ];
-        
-        return genres.some(genre => {
-            if (typeof genre !== 'string') return false;
-            
-            const genreLower = genre.toLowerCase().trim();
-            return animatedGenres.some(animatedGenre => 
-                genreLower.includes(animatedGenre)
-            );
-        });
     }
 
     async addSeriesContent(meta, numericId, seasonsData, tvdbLanguage, externalIds) {

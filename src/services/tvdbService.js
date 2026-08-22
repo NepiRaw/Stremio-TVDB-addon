@@ -7,6 +7,8 @@ const MetadataTransformer = require('./tvdb/metadataTransformer');
 const UpdatesService = require('./tvdb/updatesService');
 const { getEnhancedReleaseInfo } = require('../utils/theatricalStatus');
 const { rankSearchResults } = require('../utils/searchRanking');
+const { selectPeople } = require('../utils/people');
+const { buildMetaLinks } = require('../utils/metaLinks');
 const { context } = require('../utils/logger');
 
 class TVDBService {
@@ -336,6 +338,17 @@ class TVDBService {
             }
         }
         
+        if (!meta.director?.length) {
+            const directors = selectPeople(item.characters, 'director');
+            if (directors.length > 0) {
+                meta.director = directors;
+                this.metaLogger.debug(`director from TVDB: ${directors.join(', ')}`);
+            }
+        }
+
+        const links = buildMetaLinks(meta);
+        if (links) meta.links = links;
+
         // Cache the enhanced metadata (longer TTL since it includes external data)
         const TTL = 24 * 60 * 60 * 1000; // 24 hours in ms
         try {
