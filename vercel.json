@@ -22,6 +22,14 @@
       "destination": "/api"
     },
     {
+      "source": "/configure",
+      "destination": "/api"
+    },
+    {
+      "source": "/:language(\\w+)/configure",
+      "destination": "/api"
+    },
+    {
       "source": "/health",
       "destination": "/api"
     },

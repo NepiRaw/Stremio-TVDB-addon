@@ -118,6 +118,10 @@ Six tiers with per-type TTLs, in memory or backed by MongoDB. See [CACHING_STRAT
 
 The manifest declares `resources: ["catalog","meta"]`, types `movie` and `series`, and both id prefixes `tvdb-` and `tt`. There is no `search` resource in the protocol; search is a catalog with `extra: [{ name: 'search', isRequired: true }]`.
 
+The unprefixed `/manifest.json` is the **generic** manifest and drops the language from its name and description, because that is the one addon directories list. An absent language segment is the trigger, not `eng`, so `/eng/` and `/zzz/` both keep naming their language. **The id is identical in every case**, since a client identifies an installed addon by it.
+
+`behaviorHints.configurable` is `true`. Clients build the configure URL by replacing `manifest.json` with `configure` in the transport URL, so `/configure` and `/{language}/configure` are both served from `server.js` and both routed to the function in `vercel.json`. Without the express routes the self-hosted target would 404 while Vercel answered from its static fallback, which is exactly the split the two-target rule above exists to prevent. `configurationRequired` stays `false`, because clients replace the install button when it is true.
+
 Clients differ:
 - **Nuvio** parses strictly. A field the specification calls a string must be a string, or its Kotlin parser throws and the whole meta is discarded. `country` is the example that caused a real outage.
 - **Stremio v4.4** reads the legacy top-level fields, including `genre`, `cast` and `director`.

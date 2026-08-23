@@ -12,6 +12,8 @@ The addon is language-prefixed. `/{language}/…` is the real install form and t
 | `/{language}/catalog/{type}/{id}.json` | GET | search, query-parameter form |
 | `/{language}/meta/{type}/{id}.json` | GET | full metadata |
 | `/manifest.json`, `/catalog/…`, `/meta/…` | GET | same handlers, English |
+| `/configure` | GET | configuration page, the URL clients derive for the Configure button |
+| `/{language}/configure` | GET | same page, for an install made from a language-prefixed URL |
 | `/health` | GET | health probe |
 | `/api/app-config` | GET | version, UI strings and the manifest URL template, read by the page |
 | `/api/languages` | GET | the 48 languages the backend accepts |
@@ -36,13 +38,13 @@ The configuration page offers 11 of them in its dropdown. That is a UI choice, n
 ```json
 {
   "id": "community.stremio.tvdb-addon-eng",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "name": "TVDB Search (English)",
   "description": "Search TVDB for movies, series, and anime with English language preference…",
   "resources": ["catalog", "meta"],
   "types": ["movie", "series"],
   "idPrefixes": ["tvdb-", "tt"],
-  "behaviorHints": { "configurable": false, "configurationRequired": false },
+  "behaviorHints": { "configurable": true, "configurationRequired": false },
   "contactEmail": "https://github.com/NepiRaw/Stremio-TVDB-addon",
   "logo": "https://thetvdb.com/images/logo.png",
   "background": "https://www.thetvdb.com/images/logo.svg",
@@ -54,6 +56,25 @@ The configuration page offers 11 of them in its dropdown. That is a UI choice, n
 ```
 
 Stremio and Nuvio have no `search` resource. Global search is served by a catalog that declares `extra: [{ name: 'search', isRequired: true }]`, which is why `resources` is `["catalog","meta"]`.
+
+### Generic versus language-prefixed
+
+The **unprefixed** `/manifest.json` is the generic one, and it is what addon directories list. It drops the language from its name and description:
+
+```
+/manifest.json       name "TVDB Search"            description "Search TVDB for movies, series, and anime. …"
+/eng/manifest.json   name "TVDB Search (English)"  description "… with English language preference. …"
+```
+
+The trigger is an **absent** language segment, not `eng`. An explicit `/eng/` or an invalid `/zzz/` both keep naming the language, because both are deliberate requests.
+
+**The `id` never changes between the two.** `/manifest.json` and `/eng/manifest.json` both emit `community.stremio.tvdb-addon-eng`.
+
+### Configuration
+
+`behaviorHints.configurable` is `true`, so clients show a Configure button. They build its URL by taking the transport URL and replacing `manifest.json` with `configure` (`stremio-web`, `AddonDetailsModal.js`), which is why both `/configure` and `/{language}/configure` are served.
+
+`configurationRequired` stays `false`.
 
 ## Catalog search
 
@@ -141,7 +162,7 @@ A series adds `videos`, `seasons`, `network`, and further external ids such as `
   "timestamp": "2026-08-22T20:09:39.169Z",
   "uptime": 0.58,
   "environment": "development",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "tvdb": { "status": "connected", "hasValidToken": true },
   "cache": { "status": "ok", "type": "unknown", "totalEntries": 0 },
   "responseTime": "0ms"

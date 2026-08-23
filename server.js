@@ -93,6 +93,11 @@ app.get('/api/app-config', (req, res) => {
     res.json(appConfig);
 });
 
+// Configuration page. Clients derive these from the transport URL, so both forms must answer.
+const configurePage = (req, res) => res.sendFile(path.join(__dirname, 'frontend', 'dist', 'index.html'));
+app.get('/configure', configurePage);
+app.get('/:language/configure', configurePage);
+
 // Language-specific routes
 app.get('/:language/manifest.json', (req, res) => manifestHandler(req, res, logger));
 app.get('/:language/catalog/:type/:id/:extra?.json', (req, res) => catalogHandler(req, res, tvdbService, logger));
