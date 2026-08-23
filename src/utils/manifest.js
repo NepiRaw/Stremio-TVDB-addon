@@ -30,7 +30,11 @@ function getManifest(tvdbLanguage, req) {
         
         contactEmail: 'https://github.com/NepiRaw/Stremio-TVDB-addon',
         logo: 'https://thetvdb.com/images/logo.png',
-        background: 'https://www.thetvdb.com/images/logo.svg'
+        background: 'https://www.thetvdb.com/images/logo.svg',
+        stremioAddonsConfig: {
+            issuer: 'https://stremio-addons.net',
+            signature: 'eyJhbGciOiJkaXIiLCJlbmMiOiJBMTI4Q0JDLUhTMjU2In0..MjYRXVahhZ9GqOg6gNvJIg.cfF5qPTiBT1ylGj-IDUmogGWyKMnBChu-tpIZEkIZz4U8p6-KeerjyXeogrnOcAp32LpM_3b6k3QGAvMN81WE9I_fsxdZd2Vh9Ynf-TP_YtDfIDKyfjdfOmDsOsUl2zB.qOBvqqk51ynSueNzDpM7Sg'
+        }
     };
     
     manifest.catalogs = catalogConfig.getManifestCatalogs();
