@@ -5,8 +5,37 @@
  */
 
 const { MongoClient } = require('mongodb');
+const zlib = require('zlib');
 
 const escapeRegex = value => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const CODEC = 'br';
+
+function toBuffer(value) {
+    if (Buffer.isBuffer(value)) return value;
+    if (value instanceof Uint8Array) return Buffer.from(value);
+    return value?.buffer ? Buffer.from(value.buffer) : null;
+}
+
+function encodePayload(value) {
+    const json = Buffer.from(JSON.stringify(value ?? null));
+    const packed = zlib.brotliCompressSync(json, {
+        params: {
+            [zlib.constants.BROTLI_PARAM_QUALITY]: 4,
+            [zlib.constants.BROTLI_PARAM_SIZE_HINT]: json.length
+        }
+    });
+
+    return packed.length < json.length ? { data: packed, codec: CODEC } : { data: value };
+}
+
+function decodePayload(document) {
+    if (!document) return null;
+    if (document.codec !== CODEC) return document.data;
+
+    const buffer = toBuffer(document.data);
+    return buffer ? JSON.parse(zlib.brotliDecompressSync(buffer).toString()) : null;
+}
 
 class HybridCacheService {
     constructor(logger = null) {
@@ -140,16 +169,17 @@ class HybridCacheService {
                 
                 if (mongoEntry && new Date() < mongoEntry.expiry) {
                     this.trace('cache', started, `hit L2 · ${key}`);
+                    const data = decodePayload(mongoEntry);
 
                     const memoryEntry = {
-                        data: mongoEntry.data,
+                        data,
                         expiry: mongoEntry.expiry.getTime(),
                         timestamp: Date.now(),
                         type: cacheType
                     };
                     memoryCache.set(key, memoryEntry);
-                    
-                    return mongoEntry.data;
+
+                    return data;
                 }
             } catch (error) {
                 this.logger?.error?.(`MongoDB cache read error: ${error.message}`);
@@ -185,15 +215,17 @@ class HybridCacheService {
 
     async storeInMongoDB(cacheType, key, data, expiry) {
         const collection = this.mongoDB.collection(this.mongoCollections[cacheType]);
-        
+        const payload = encodePayload(data);
+
         const document = {
             key: key,
-            data: data,
+            data: payload.data,
             expiry: new Date(expiry),
             timestamp: new Date(),
             type: cacheType
         };
-        
+        if (payload.codec) document.codec = payload.codec;
+
         await collection.replaceOne(
             { key: key },
             document,
@@ -345,15 +377,19 @@ class HybridCacheService {
 
                 results[type] = {
                     count: entries.length,
-                    entries: entries.map(entry => ({
-                        key: entry.key,
-                        type: entry.type,
-                        timestamp: entry.timestamp,
-                        expiry: entry.expiry,
-                        isExpired: new Date() > entry.expiry,
-                        dataSize: JSON.stringify(entry.data).length,
-                        dataPreview: this.getDataPreview(entry.data)
-                    }))
+                    entries: entries.map(entry => {
+                        const data = decodePayload(entry);
+                        return {
+                            key: entry.key,
+                            type: entry.type,
+                            timestamp: entry.timestamp,
+                            expiry: entry.expiry,
+                            isExpired: new Date() > entry.expiry,
+                            storedSize: entry.codec ? entry.data.length : JSON.stringify(entry.data).length,
+                            dataSize: JSON.stringify(data).length,
+                            dataPreview: this.getDataPreview(data)
+                        };
+                    })
                 };
             }
 
@@ -399,7 +435,9 @@ class HybridCacheService {
                 const active = total - expired;
 
                 const sampleDoc = await collection.findOne({});
-                const avgSize = sampleDoc ? JSON.stringify(sampleDoc).length : 0;
+                const avgSize = sampleDoc
+                    ? (sampleDoc.codec ? sampleDoc.data.length : JSON.stringify(sampleDoc.data).length)
+                    : 0;
                 
                 summary[type] = {
                     total,

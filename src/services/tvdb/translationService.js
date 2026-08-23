@@ -7,6 +7,16 @@ const { mapToTvdbLanguage, selectPreferredTranslation } = require('../../utils/l
 const { fetchAllEpisodePages } = require('../../utils/episodePager');
 const { isTransportError } = require('../../utils/errorHandler');
 
+function collapseFallback(translations) {
+    if (!translations?.primary || translations.primary !== translations.fallback) return translations;
+    return { primary: translations.primary, fallbackSameAsPrimary: true };
+}
+
+function expandFallback(translations) {
+    if (!translations?.fallbackSameAsPrimary) return translations;
+    return { primary: translations.primary, fallback: translations.primary };
+}
+
 class TranslationService {
     constructor(apiClient, cacheService, logger) {
         this.apiClient = apiClient;
@@ -80,7 +90,7 @@ class TranslationService {
         
         const cachedTranslations = await this.cacheService.getTranslation('series', seriesId, tvdbLanguage, 'bulk-episodes');
         if (cachedTranslations) {
-            return cachedTranslations;
+            return expandFallback(cachedTranslations);
         }
 
         try {
@@ -108,7 +118,7 @@ class TranslationService {
         }
         
         if (!unanswered) {
-            await this.cacheService.setTranslation('series', seriesId, tvdbLanguage, 'bulk-episodes', translations);
+            await this.cacheService.setTranslation('series', seriesId, tvdbLanguage, 'bulk-episodes', collapseFallback(translations));
         }
 
         return translations;
