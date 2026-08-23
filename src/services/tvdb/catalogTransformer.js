@@ -76,6 +76,7 @@ class CatalogTransformer {
         for (const year of yearSources) {
             if (year && year > 1800 && year <= new Date().getFullYear() + 5) {
                 meta.year = Number(year);
+                meta.releaseInfo = String(meta.year);
                 break;
             }
         }

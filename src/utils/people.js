@@ -8,6 +8,9 @@
 const parsedLimit = Number.parseInt(process.env.META_CAST_LIMIT, 10);
 const CAST_LIMIT = Number.isInteger(parsedLimit) && parsedLimit >= 0 ? parsedLimit : 3;
 
+// Nuvio renders a scrolling rail from app_extras, so it takes more names than meta.cast does
+const DETAILED_CAST_LIMIT = 12;
+
 const nameOf = character => character.people?.name || character.personName || null;
 
 // featured credits first, then TVDB's own order
@@ -17,7 +20,7 @@ function byImportance(a, b) {
     return (a.sort ?? 999) - (b.sort ?? 999);
 }
 
-function selectPeople(characters, peopleType, limit = Infinity) {
+function selectCharacters(characters, peopleType, limit = Infinity) {
     if (!Array.isArray(characters) || characters.length === 0) return [];
 
     const matching = characters
@@ -25,15 +28,34 @@ function selectPeople(characters, peopleType, limit = Infinity) {
         .sort(byImportance);
 
     const seen = new Set();
-    const people = [];
+    const selected = [];
     for (const character of matching) {
-        if (people.length >= limit) break;
+        if (selected.length >= limit) break;
         const person = character.peopleId ?? character.people?.id ?? nameOf(character);
         if (seen.has(person)) continue;
         seen.add(person);
-        people.push(nameOf(character));
+        selected.push(character);
     }
-    return people;
+    return selected;
 }
 
-module.exports = { CAST_LIMIT, selectPeople };
+function selectPeople(characters, peopleType, limit = Infinity) {
+    return selectCharacters(characters, peopleType, limit).map(nameOf);
+}
+
+// Nuvio reads app_extras for the character name and the photo; Stremio ignores the field entirely.
+function selectDetailedPeople(characters, peopleType, limit = Infinity) {
+    return selectCharacters(characters, peopleType, limit).map(character => {
+        const person = { name: nameOf(character) };
+
+        const role = typeof character.name === 'string' ? character.name.trim() : '';
+        if (role) person.character = role;
+
+        const photo = character.personImgURL || character.people?.image;
+        if (photo) person.photo = photo;
+
+        return person;
+    });
+}
+
+module.exports = { CAST_LIMIT, DETAILED_CAST_LIMIT, selectPeople, selectDetailedPeople };

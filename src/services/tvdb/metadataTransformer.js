@@ -5,7 +5,9 @@
 
 const { validateImdbRequirement } = require('../../utils/imdbFilter');
 const { getEnhancedReleaseInfo } = require('../../utils/theatricalStatus');
-const { CAST_LIMIT, selectPeople } = require('../../utils/people');
+const { CAST_LIMIT, DETAILED_CAST_LIMIT, selectPeople, selectDetailedPeople } = require('../../utils/people');
+const { selectContentRating } = require('../../utils/contentRating');
+const { buildTrailers, buildTrailerStreams } = require('../../utils/trailers');
 
 class MetadataTransformer {
     constructor(contentFetcher, translationService, artworkHandler, logger) {
@@ -144,6 +146,12 @@ class MetadataTransformer {
 
         this.addCast(meta, item);
 
+        this.addStatus(meta, item);
+
+        this.addContentRating(meta, item, tvdbLanguage);
+
+        this.addTrailers(meta, item, tvdbLanguage);
+
         const country = item.originalCountry || item.country;
         if (country) {
             meta.country = Array.isArray(country) ? country.filter(Boolean).join(', ') : String(country);
@@ -251,12 +259,40 @@ class MetadataTransformer {
     }
 
     addCast(meta, item) {
-        const cast = selectPeople(item.characters, 'actor', CAST_LIMIT);
+        if (CAST_LIMIT === 0) return;
 
+        const cast = selectPeople(item.characters, 'actor', CAST_LIMIT);
         if (cast.length > 0) {
             meta.cast = cast;
             this.logger?.debug?.(`Added ${cast.length} cast members (sorted by importance): ${cast.join(', ')}`);
         }
+
+        const detailed = selectDetailedPeople(item.characters, 'actor', DETAILED_CAST_LIMIT);
+        if (detailed.length > 0) {
+            meta.app_extras = { ...meta.app_extras, cast: detailed };
+        }
+    }
+
+    addStatus(meta, item) {
+        const name = typeof item.status === 'object' ? item.status?.name : item.status;
+        if (typeof name === 'string' && name.trim()) {
+            meta.status = name.trim();
+        }
+    }
+
+    addContentRating(meta, item, tvdbLanguage) {
+        const rating = selectContentRating(item.contentRatings, tvdbLanguage);
+        if (rating) {
+            meta.ageRating = rating;
+        }
+    }
+
+    addTrailers(meta, item, tvdbLanguage) {
+        const trailers = buildTrailers(item.trailers, tvdbLanguage);
+        if (trailers.length === 0) return;
+
+        meta.trailers = trailers;
+        meta.trailerStreams = buildTrailerStreams(trailers, meta.name);
     }
 
     async addSeriesContent(meta, numericId, seasonsData, tvdbLanguage, externalIds) {

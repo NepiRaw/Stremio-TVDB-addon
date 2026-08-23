@@ -93,6 +93,7 @@ A row is built from the `/search` payload alone. No per-item detail call is made
       "name": "Batman",
       "poster": "https://artworks.thetvdb.com/banners/v4/movie/1204/posters/621e1de137962.jpg",
       "year": 1989,
+      "releaseInfo": "1989",
       "description": "Le célèbre et impitoyable justicier, Batman, est de retour…",
       "genres": ["Action", "Fantasy"],
       "imdb_id": "tt0096895"
@@ -105,6 +106,8 @@ Rows are dropped when they have no IMDb id or no real poster, so the returned co
 
 Search rows deliberately carry no `links`. Preview rows render no people and no genres.
 
+`year` and `releaseInfo` hold the same value in two shapes, a number and a string, because clients disagree about which one a row carries. Nuvio reads only `releaseInfo` and shows no year without it.
+
 ## Metadata
 
 `GET /{language}/meta/{type}/{id}.json`. `{id}` accepts both id prefixes. A `tt` id is resolved through `GET /search/remoteid/{imdbId}`.
@@ -112,7 +115,7 @@ Search rows deliberately carry no `links`. Preview rows render no people and no 
 Movie fields, from `/fra/meta/movie/tt0078346.json`:
 
 ```
-awards, background, behaviorHints, cast, country, description, director, external_ids, genre, genres, id, imdb_id, imdbRating, language, links, logo, metascore, name, poster, released, releaseInfo, rottenTomatoes, runtime, tmdb_id, tvdb_id, type, votes, year
+ageRating, app_extras, awards, background, behaviorHints, cast, country, description, director, external_ids, genre, genres, id, imdb_id, imdbRating, language, links, logo, metascore, name, poster, released, releaseInfo, rottenTomatoes, runtime, status, tmdb_id, trailers, trailerStreams, tvdb_id, type, votes, year
 ```
 
 A series adds `videos`, `seasons`, `network`, and further external ids such as `eidr_id` and `tv_maze_id`. Each `videos` entry carries `id`, `title`, `season`, `episode`, `released`, `overview`, and `thumbnail`.
@@ -146,11 +149,14 @@ A series adds `videos`, `seasons`, `network`, and further external ids such as `
 
 ### Meta fields
 
-- **`country` is a string, never an array.** Nuvio's parser reads it as a JSON primitive and throws on an array, which discards the whole meta. The Stremio specification agrees it is a string.
+- **`country` and `status` are strings, never an array or an object.** Nuvio's parser reads both as JSON primitives and throws on anything else, which discards the whole meta. TVDB sends `status` as an object, so only `status.name` goes out: `Released`, `Ended` or `Continuing`. The Stremio specification agrees both are strings.
 - **`genres` and `genre` are both emitted and differ.** `genres` is TVDB's vocabulary, `genre` is OMDb's. Stremio v5 reads `genres`, Stremio v4.4 reads `genre`.
 - **`links` is what Stremio v5 renders people from.** stremio-core has no `cast`, `director` or `writer` member, so it discards those keys silently. Categories emitted are `imdb`, `Genres`, `Cast` and `Directors`, matching Cinemeta's convention. When `links` is absent, stremio-core synthesises only the `imdb` and `Genres` entries itself, so the array has to carry them too.
 - **`cast` is actors only**, ordered by TVDB's featured flag then its sort order, deduplicated by person, and capped by `META_CAST_LIMIT` (default 3).
 - **`director`** comes from OMDb or Cinemeta first and falls back to TVDB's `Director` credits.
+- **`app_extras.cast` is Nuvio's cast rail**, up to 12 actors with `name`, `character` and `photo`, from the same selection as `cast`. Stremio ignores the field. It is skipped entirely when `META_CAST_LIMIT` is `0`.
+- **`ageRating`** is TVDB's rating for a country that matches the configured language, falling back to the US. Series rarely carry a local entry.
+- **`trailers` and `trailerStreams` are the same YouTube ids in two shapes.** Stremio reads `source` on `trailers` and plays from `trailerStreams`, Nuvio reads `key || source || ytId`. The trailer in the configured language comes first, then English. TVDB has trailers for movies and almost never for series.
 - **`writer` is not emitted.**
 - **`imdbRating` is a string**, not a number.
 
