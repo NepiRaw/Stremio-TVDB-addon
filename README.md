@@ -59,11 +59,10 @@
 
 ```yaml
 # Option 1: Use the prebuilt image (recommended for most users)
-version: '3.8'
 services:
-  stremio-tvdb-addon:
-    image: NepiRaw/Stremio-TVDB-addon:latest
-    container_name: stremio-tvdb-addon
+  stremio-tvdb:
+    image: NepiRaw/Stremio-TVDB:latest
+    container_name: stremio-tvdb
     restart: unless-stopped
     ports:
       - "3000:3000"
