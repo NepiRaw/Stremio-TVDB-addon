@@ -1,4 +1,12 @@
 const { context } = require('../utils/logger');
+const { hasValidImdbId } = require('../utils/imdbFilter');
+
+const NOT_FOUND_MAX_AGE = 86400;
+
+function notFound(res, error) {
+    res.setHeader('Cache-Control', `public, max-age=${NOT_FOUND_MAX_AGE}`);
+    return res.status(404).json({ error });
+}
 
 /**
  * Extract TVDB language code from URL parameter
@@ -39,6 +47,7 @@ async function metaHandler(req, res, tvdbService, rootLogger) {
         }
 
         let tvdbId;
+        let requestedImdbId = null;
 
         if (id.startsWith('tvdb-')) {
             tvdbId = id.replace('tvdb-', '');
@@ -46,10 +55,11 @@ async function metaHandler(req, res, tvdbService, rootLogger) {
                 return res.status(400).json({ error: 'Invalid TVDB ID' });
             }
         } else if (/^tt\d{7,}$/.test(id)) {
+            requestedImdbId = id;
             tvdbId = await tvdbService.getTvdbIdFromImdbId(id, type);
             if (!tvdbId) {
                 context.note({ outcome: `no TVDB ${type} for ${id}` });
-                return res.status(404).json({ error: 'Content not found by IMDb ID' });
+                return notFound(res, 'Content not found by IMDb ID');
             }
             logger?.debug?.(`Resolved IMDb ID ${id} to TVDB ${type} ${tvdbId}`);
         } else {
@@ -71,13 +81,19 @@ async function metaHandler(req, res, tvdbService, rootLogger) {
 
         if (!detailedData) {
             context.note({ outcome: 'not found' });
-            return res.status(404).json({ error: 'Content not found' });
+            return notFound(res, 'Content not found');
+        }
+
+        if (requestedImdbId && !hasValidImdbId(detailedData)) {
+            const remoteIds = Array.isArray(detailedData.remoteIds) ? detailedData.remoteIds : [];
+            detailedData.remoteIds = [...remoteIds, { id: requestedImdbId, type: 2, sourceName: 'IMDB' }];
         }
 
         const meta = await tvdbService.transformDetailedToStremioMeta(detailedData, type, seasonsData, userLanguage);
-        
+
         if (!meta) {
-            return res.status(500).json({ error: 'Failed to process metadata' });
+            context.note({ outcome: 'not representable' });
+            return notFound(res, 'Content not available');
         }
 
         const via = describeCalls();
